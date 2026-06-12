@@ -23,6 +23,26 @@ export interface AudioSpeakResponse {
   provider?: string
 }
 
+export interface GaladrielDiagnosticCheck {
+  ok: boolean
+  [key: string]: unknown
+}
+
+export interface GaladrielDiagnosticsResponse {
+  ok: boolean
+  name: string
+  hermes_home: string
+  project_root?: null | string
+  checks: Record<string, GaladrielDiagnosticCheck>
+}
+
+export interface GaladrielSpeechSummaryResponse {
+  ok: boolean
+  spoken_summary: string
+  display_spoken_summary: string
+  source: string
+}
+
 export interface ElevenLabsVoice {
   label: string
   name: string

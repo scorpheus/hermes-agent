@@ -1701,6 +1701,15 @@ def _display_system_platform(
     }
 
 
+@app.get("/api/galadriel/diagnostics")
+async def get_galadriel_diagnostics():
+    """Native Galadriel diagnostics, replacing the external Companion bridge panel."""
+    from hermes_cli.galadriel_runtime import build_galadriel_diagnostics
+
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, build_galadriel_diagnostics)
+
+
 @app.get("/api/system/stats")
 async def get_system_stats():
     """Host + process system stats for the System page.
@@ -2364,6 +2373,26 @@ class TTSSpeakRequest(BaseModel):
     text: str
 
 
+class GaladrielSpeechSummaryRequest(BaseModel):
+    user_message: str = ""
+    assistant_reply: str = ""
+
+
+@app.post("/api/galadriel/speech/summary")
+async def galadriel_speech_summary(payload: GaladrielSpeechSummaryRequest):
+    """Return the spoken/display split for Galadriel voice surfaces.
+
+    This keeps the bridge's useful oral/written split behavior available from
+    the native dashboard backend without requiring the legacy bridge process.
+    """
+    from hermes_cli.galadriel_runtime import derive_spoken_summary
+
+    return {
+        "ok": True,
+        **derive_spoken_summary(payload.user_message or "", payload.assistant_reply or ""),
+    }
+
+
 def _elevenlabs_voice_label(voice: Dict[str, Any]) -> str:
     name = str(voice.get("name") or voice.get("voice_id") or "Voice").strip()
     category = str(voice.get("category") or "").strip()
@@ -2435,9 +2464,12 @@ async def speak_text(payload: TTSSpeakRequest):
         raise HTTPException(status_code=400, detail="Text is required")
 
     try:
+        from hermes_cli.galadriel_runtime import apply_oral_pronunciations
         from tools.tts_tool import text_to_speech_tool
+
+        spoken_text = apply_oral_pronunciations(text)
         loop = asyncio.get_running_loop()
-        result_json = await loop.run_in_executor(None, text_to_speech_tool, text)
+        result_json = await loop.run_in_executor(None, text_to_speech_tool, spoken_text)
     except Exception as exc:
         _log.exception("Desktop voice TTS failed")
         raise HTTPException(status_code=500, detail=f"Speech synthesis failed: {exc}")

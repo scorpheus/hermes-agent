@@ -14,6 +14,8 @@ import type {
   CronJobUpdates,
   ElevenLabsVoicesResponse,
   EnvVarInfo,
+  GaladrielDiagnosticsResponse,
+  GaladrielSpeechSummaryResponse,
   HermesConfig,
   HermesConfigRecord,
   LogsResponse,
@@ -67,6 +69,9 @@ export type {
   ElevenLabsVoice,
   ElevenLabsVoicesResponse,
   EnvVarInfo,
+  GaladrielDiagnosticCheck,
+  GaladrielDiagnosticsResponse,
+  GaladrielSpeechSummaryResponse,
   GatewayReadyPayload,
   HermesConfig,
   HermesConfigRecord,
@@ -254,6 +259,14 @@ export function getGlobalModelInfo(): Promise<ModelInfoResponse> {
 export function getStatus(): Promise<StatusResponse> {
   return window.hermesDesktop.api<StatusResponse>({
     path: '/api/status'
+  })
+}
+
+export function getGaladrielDiagnostics(): Promise<GaladrielDiagnosticsResponse> {
+  return window.hermesDesktop.api<GaladrielDiagnosticsResponse>({
+    ...profileScoped(),
+    path: '/api/galadriel/diagnostics',
+    timeoutMs: 45_000
   })
 }
 
@@ -721,6 +734,20 @@ export function speakText(text: string): Promise<AudioSpeakResponse> {
     path: '/api/audio/speak',
     method: 'POST',
     body: { text }
+  })
+}
+
+export function getGaladrielSpeechSummary(
+  userMessage: string,
+  assistantReply: string
+): Promise<GaladrielSpeechSummaryResponse> {
+  return window.hermesDesktop.api<GaladrielSpeechSummaryResponse>({
+    path: '/api/galadriel/speech/summary',
+    method: 'POST',
+    body: {
+      user_message: userMessage,
+      assistant_reply: assistantReply
+    }
   })
 }
 
