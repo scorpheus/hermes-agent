@@ -9,8 +9,7 @@ import type { DesktopTheme, DesktopThemeTypography } from './types'
 // text/mono fonts carry emoji glyphs, so without this emoji render as tofu
 // boxes on platforms whose default text font lacks them (e.g. Linux/#40364).
 // Covers macOS, Windows, Linux, plus the `emoji` generic for anything else.
-export const EMOJI_FALLBACK =
-  '"Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji", emoji'
+export const EMOJI_FALLBACK = '"Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji", emoji'
 
 const SYSTEM_SANS =
   '"Segoe WPC", "Segoe UI", -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, sans-serif, ' +
@@ -132,6 +131,71 @@ export const midnightTheme: DesktopTheme = {
   typography: {
     fontMono: `"JetBrains Mono", ${SYSTEM_MONO}`,
     fontUrl: 'https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap'
+  }
+}
+
+/** Galadriel — nocturne, silver-violet, restrained command-room palette. */
+export const galadrielTheme: DesktopTheme = {
+  name: 'galadriel',
+  label: 'Galadriel',
+  description: 'Nocturne silver-violet command room for Scorpheus',
+  colors: {
+    background: '#06070d',
+    foreground: '#ece7ff',
+    card: '#0b0d17',
+    cardForeground: '#ece7ff',
+    muted: '#111522',
+    mutedForeground: '#8f96b3',
+    popover: '#0e111d',
+    popoverForeground: '#f4f0ff',
+    primary: '#d9d2ff',
+    primaryForeground: '#06070d',
+    secondary: '#171b2b',
+    secondaryForeground: '#c8c3e6',
+    accent: '#19172d',
+    accentForeground: '#ded8ff',
+    border: '#272b42',
+    input: '#242940',
+    ring: '#b7a8ff',
+    midground: '#8f7aff',
+    destructive: '#b84a6f',
+    destructiveForeground: '#fff1f5',
+    sidebarBackground: '#03050a',
+    sidebarBorder: '#191d2f',
+    userBubble: '#101629',
+    userBubbleBorder: '#2d385f'
+  },
+  darkColors: {
+    background: '#05060b',
+    foreground: '#f0ecff',
+    card: '#090b14',
+    cardForeground: '#f0ecff',
+    muted: '#10131f',
+    mutedForeground: '#9299b6',
+    popover: '#0d101b',
+    popoverForeground: '#f7f4ff',
+    primary: '#e5ddff',
+    primaryForeground: '#05060b',
+    secondary: '#15192a',
+    secondaryForeground: '#d2cbed',
+    accent: '#17142a',
+    accentForeground: '#e2dcff',
+    border: '#252a42',
+    input: '#20263d',
+    ring: '#c3b5ff',
+    midground: '#9a84ff',
+    destructive: '#c0557b',
+    destructiveForeground: '#fff1f5',
+    sidebarBackground: '#030409',
+    sidebarBorder: '#171b2d',
+    userBubble: '#0f1425',
+    userBubbleBorder: '#2b355b'
+  },
+  typography: {
+    fontSans: 'Inter, ' + SYSTEM_SANS,
+    fontMono: '"JetBrains Mono", ' + SYSTEM_MONO,
+    fontUrl:
+      'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap'
   }
 }
 
@@ -279,6 +343,7 @@ export const slateTheme: DesktopTheme = {
 }
 
 export const BUILTIN_THEMES: Record<string, DesktopTheme> = {
+  galadriel: galadrielTheme,
   nous: nousTheme,
   midnight: midnightTheme,
   ember: emberTheme,
@@ -290,4 +355,4 @@ export const BUILTIN_THEMES: Record<string, DesktopTheme> = {
 export const BUILTIN_THEME_LIST = Object.values(BUILTIN_THEMES)
 
 /** Skin used when nothing is persisted or the persisted name is retired. */
-export const DEFAULT_SKIN_NAME = 'nous'
+export const DEFAULT_SKIN_NAME = 'galadriel'

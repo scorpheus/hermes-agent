@@ -1,5 +1,7 @@
 import { type CSSProperties, useState } from 'react'
 
+import { AnimatedGaladrielAvatar } from '@/components/galadriel/animated-galadriel-avatar'
+
 import introCopyJsonl from './intro-copy.jsonl?raw'
 
 type IntroCopy = {
@@ -20,24 +22,24 @@ const NEUTRAL_PERSONALITIES = new Set(['', 'default', 'none', 'neutral'])
 
 const FALLBACK_COPY: IntroCopy[] = [
   {
-    headline: 'What are we moving today?',
-    body: "Send a bug, branch, plan, or rough idea. I'll inspect the repo and turn it into the next concrete step."
+    headline: 'Galadriel veille. Que faut-il clarifier ?',
+    body: "Envoyez un bug, une branche, un plan ou une intuition. Je trie le bruit, j'inspecte, puis je ramène l'étape nette."
   },
   {
-    headline: "What's on your mind?",
-    body: "Bring the code, question, or stuck part. I'll read the room before making changes."
+    headline: 'Le fil est ouvert, Scorpheus.',
+    body: "Déposez le code, l'erreur ou l'idée brute. Je garde la continuité et je sépare l'essentiel du décor."
   },
   {
-    headline: 'What should Hermes look at?',
-    body: "Send the task, failing path, or half-formed plan. I'll help turn it into action."
+    headline: 'Que dois-je examiner ?',
+    body: "Chemin, symptôme ou objectif : je vérifie d'abord, puis j'agis avec méthode."
   },
   {
-    headline: 'Where should we start?',
-    body: "Bring the problem, goal, or file. I'll inspect first and keep the next step concrete."
+    headline: 'Par où commençons-nous ?',
+    body: "Apportez le problème ou le fichier. Je m'occupe de l'ordre, des preuves et du prochain geste utile."
   },
   {
-    headline: 'What needs attention?',
-    body: "Send the context you have. I'll help sort it into a plan or a fix."
+    headline: "Qu'est-ce qui mérite attention ?",
+    body: 'Donnez-moi le contexte. Je le transforme en plan, diagnostic ou correctif vérifié.'
   }
 ]
 
@@ -142,7 +144,7 @@ function pickCopy(copies: IntroCopy[], seed = 0): IntroCopy {
   return copies[Math.abs(seed) % copies.length] || FALLBACK_COPY[0]
 }
 
-const WORDMARK = 'HERMES AGENT'
+const WORDMARK = 'GALADRIEL'
 
 function resolveCopy(personality?: string, seed?: number): IntroCopy {
   const personalityKey = normalizeKey(personality)
@@ -164,6 +166,7 @@ export function Intro({ personality, seed }: IntroProps) {
       data-slot="aui_intro"
     >
       <div className="w-full min-w-0">
+        <AnimatedGaladrielAvatar className="mx-auto mb-3 size-16 sm:size-20" state="idle" title="Galadriel" />
         <p
           aria-label={WORDMARK}
           className="fit-text mx-auto mb-1 w-[calc(100%-1rem)] font-['Collapse'] font-bold uppercase leading-[0.9] tracking-[0.08em] text-midground mix-blend-plus-lighter dark:text-foreground/90"

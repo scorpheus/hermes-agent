@@ -1,6 +1,6 @@
 {
   "name": "hermes",
-  "productName": "Hermes",
+  "productName": "Galadriel",
   "private": true,
   "version": "0.15.1",
   "description": "Native desktop shell for Hermes Agent.",
@@ -130,10 +130,10 @@
   },
   "build": {
     "electronVersion": "40.9.3",
-    "appId": "com.nousresearch.hermes",
-    "productName": "Hermes",
-    "executableName": "Hermes",
-    "artifactName": "Hermes-${version}-${os}-${arch}.${ext}",
+    "appId": "com.scorpheus.galadriel",
+    "productName": "Galadriel",
+    "executableName": "Galadriel",
+    "artifactName": "Galadriel-${version}-${os}-${arch}.${ext}",
     "icon": "assets/icon",
     "directories": {
       "output": "release"
@@ -174,9 +174,9 @@
       "entitlements": "electron/entitlements.mac.plist",
       "entitlementsInherit": "electron/entitlements.mac.inherit.plist",
       "extendInfo": {
-        "CFBundleDisplayName": "Hermes",
-        "CFBundleExecutable": "Hermes",
-        "CFBundleName": "Hermes",
+        "CFBundleDisplayName": "Galadriel",
+        "CFBundleExecutable": "Galadriel",
+        "CFBundleName": "Galadriel",
         "NSAudioCaptureUsageDescription": "Hermes uses audio capture for voice conversations.",
         "NSMicrophoneUsageDescription": "Hermes uses the microphone for voice input and voice conversations."
       },
@@ -188,7 +188,7 @@
       ]
     },
     "dmg": {
-      "title": "Install Hermes",
+      "title": "Install Galadriel",
       "backgroundColor": "#f5f5f7",
       "iconSize": 96,
       "window": {
@@ -210,7 +210,7 @@
       ]
     },
     "win": {
-      "legalTrademarks": "Hermes",
+      "legalTrademarks": "Galadriel",
       "target": [
         "nsis",
         "msi"

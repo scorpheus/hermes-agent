@@ -63,6 +63,7 @@ import { GeneratedImageProvider, useGeneratedImageContext } from '@/components/c
 import { ImageGenerationPlaceholder } from '@/components/chat/image-generation-placeholder'
 import { Intro, type IntroProps } from '@/components/chat/intro'
 import { PreviewAttachment } from '@/components/chat/preview-attachment'
+import { AnimatedGaladrielAvatar } from '@/components/galadriel/animated-galadriel-avatar'
 import { Codicon } from '@/components/ui/codicon'
 import { CopyButton } from '@/components/ui/copy-button'
 import {
@@ -96,6 +97,16 @@ interface MessageActionProps {
 }
 
 let readAloudAudio: HTMLAudioElement | null = null
+
+function GaladrielAssistantAvatar({ running }: { running?: boolean }) {
+  return (
+    <AnimatedGaladrielAvatar
+      className="mt-0.5 hidden size-8 sm:inline-flex"
+      state={running ? 'thinking' : 'idle'}
+      title="Galadriel"
+    />
+  )
+}
 
 function partText(part: unknown): string {
   if (typeof part === 'string') {
@@ -227,38 +238,41 @@ const AssistantMessage: FC<{ onBranchInNewChat?: (messageId: string) => void }> 
 
   return (
     <MessagePrimitive.Root
-      className="group flex w-full min-w-0 max-w-full flex-col gap-0 self-start overflow-hidden"
+      className="group flex w-full min-w-0 max-w-full gap-3 self-start overflow-hidden"
       data-role="assistant"
       data-slot="aui_assistant-message-root"
       data-streaming={messageStatus === 'running' ? 'true' : undefined}
       ref={enterRef}
     >
-      <div
-        className="wrap-anywhere min-w-0 max-w-full overflow-hidden text-pretty text-[length:var(--conversation-text-font-size)] leading-(--dt-line-height) text-foreground"
-        data-slot="aui_assistant-message-content"
-      >
-        {hoistedTodos.length > 0 && <HoistedTodoPanel todos={hoistedTodos} />}
-        <MessagePrimitive.Parts components={MESSAGE_PARTS_COMPONENTS} />
-        {messageStatus === 'running' && <StreamStallIndicator activity={`${content.length}:${messageText.length}`} />}
-        {previewTargets.length > 0 && (
-          <div className="mt-3 flex flex-wrap gap-2">
-            {previewTargets.map(target => (
-              <PreviewAttachment key={target} source="explicit-link" target={target} />
-            ))}
-          </div>
+      <GaladrielAssistantAvatar running={messageStatus === 'running'} />
+      <div className="flex min-w-0 max-w-full flex-1 flex-col gap-0 overflow-hidden">
+        <div
+          className="wrap-anywhere min-w-0 max-w-full overflow-hidden text-pretty text-[length:var(--conversation-text-font-size)] leading-(--dt-line-height) text-foreground"
+          data-slot="aui_assistant-message-content"
+        >
+          {hoistedTodos.length > 0 && <HoistedTodoPanel todos={hoistedTodos} />}
+          <MessagePrimitive.Parts components={MESSAGE_PARTS_COMPONENTS} />
+          {messageStatus === 'running' && <StreamStallIndicator activity={`${content.length}:${messageText.length}`} />}
+          {previewTargets.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {previewTargets.map(target => (
+                <PreviewAttachment key={target} source="explicit-link" target={target} />
+              ))}
+            </div>
+          )}
+          <MessagePrimitive.Error>
+            <ErrorPrimitive.Root
+              className="mt-1.5 text-[0.78rem] leading-5 text-[color-mix(in_srgb,var(--dt-destructive)_78%,var(--ui-text-secondary))]"
+              role="alert"
+            >
+              <ErrorPrimitive.Message />
+            </ErrorPrimitive.Root>
+          </MessagePrimitive.Error>
+        </div>
+        {messageText.trim().length > 0 && (
+          <AssistantFooter messageId={messageId} messageText={messageText} onBranchInNewChat={onBranchInNewChat} />
         )}
-        <MessagePrimitive.Error>
-          <ErrorPrimitive.Root
-            className="mt-1.5 text-[0.78rem] leading-5 text-[color-mix(in_srgb,var(--dt-destructive)_78%,var(--ui-text-secondary))]"
-            role="alert"
-          >
-            <ErrorPrimitive.Message />
-          </ErrorPrimitive.Root>
-        </MessagePrimitive.Error>
       </div>
-      {messageText.trim().length > 0 && (
-        <AssistantFooter messageId={messageId} messageText={messageText} onBranchInNewChat={onBranchInNewChat} />
-      )}
     </MessagePrimitive.Root>
   )
 }
@@ -318,7 +332,7 @@ const StreamStallIndicator: FC<{ activity: string }> = ({ activity }) => {
   }
 
   return (
-    <StatusRow className="mt-1.5" data-slot="aui_stream-stall" label="Hermes is thinking">
+    <StatusRow className="mt-1.5" data-slot="aui_stream-stall" label="Galadriel réfléchit">
       <span aria-hidden="true" className="dither inline-block size-3 rounded-[2px] text-midground/80 animate-pulse" />
       <ActivityTimerText seconds={elapsed} />
     </StatusRow>
@@ -920,7 +934,12 @@ const SystemMessage: FC = () => {
       >
         <span className="font-mono text-muted-foreground/55">{slashStatus.groups.command}</span>
         <span className="mx-1.5 text-muted-foreground/35">·</span>
-        <LinkifiedText className="whitespace-pre-wrap" explicitOnly pretty={false} text={slashStatus.groups.output.trim()} />
+        <LinkifiedText
+          className="whitespace-pre-wrap"
+          explicitOnly
+          pretty={false}
+          text={slashStatus.groups.output.trim()}
+        />
       </MessagePrimitive.Root>
     )
   }

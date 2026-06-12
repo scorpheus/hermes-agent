@@ -1,0 +1,74 @@
+{
+  "created_at": "2026-06-09 14:15:32",
+  "items": [
+    {
+      "source": "C:/Users/scorp/Documents/Projets_Perso/GaladrielCompanionApp/app/src/assets/galadriel-spritesheet.webp",
+      "canonical": "C:/Users/scorp/Documents/Projets_Perso/GaladrielCompanionApp/hermes_core/home/galadriel/avatar-assets/app-galadriel-spritesheet.webp",
+      "size": 2726678,
+      "sha256": "77215d5177110dd32b739b7d92ef1094736c6017a7dcfbf88718bbc61ce18677",
+      "role": "Companion App spritesheet source, used by GaladrielAvatar frame extraction"
+    },
+    {
+      "source": "C:/Users/scorp/Documents/Projets_Perso/GaladrielCompanionApp/app/src/assets/galadriel-contact-sheet.png",
+      "canonical": "C:/Users/scorp/Documents/Projets_Perso/GaladrielCompanionApp/hermes_core/home/galadriel/avatar-assets/app-galadriel-contact-sheet.png",
+      "size": 3143672,
+      "sha256": "de57512afeba4c16f968878460e049df2d7aec35615a1816c662374b206cfd44",
+      "role": "Contact sheet / visual reference for avatar frames"
+    },
+    {
+      "source": "C:/Users/scorp/Documents/Projets_Perso/GaladrielCompanionApp/app/src/assets/galadriel-contact-12x12.png",
+      "canonical": "C:/Users/scorp/Documents/Projets_Perso/GaladrielCompanionApp/hermes_core/home/galadriel/avatar-assets/app-galadriel-contact-12x12.png",
+      "size": 3950042,
+      "sha256": "7a07a94a96c50f72ca797dea8ac9386f533516b7dc0fafec1c294429c620d7df",
+      "role": "12x12 contact/reference sheet"
+    },
+    {
+      "source": "C:/Users/scorp/Documents/Projets_Perso/GaladrielCompanionApp/app/src/assets/galadriel-contact-labelled-12x12.png",
+      "canonical": "C:/Users/scorp/Documents/Projets_Perso/GaladrielCompanionApp/hermes_core/home/galadriel/avatar-assets/app-galadriel-contact-labelled-12x12.png",
+      "size": 2996787,
+      "sha256": "6149c245cb288154b7568e2184eee12ffd0bfce2b336674848323971a4e9bd33",
+      "role": "Labelled 12x12 contact/reference sheet"
+    },
+    {
+      "source": "C:/Users/scorp/.codex/pets/galadriel/pet.json",
+      "canonical": "C:/Users/scorp/Documents/Projets_Perso/GaladrielCompanionApp/hermes_core/home/galadriel/avatar-assets/codex-pet/pet.json",
+      "size": 235,
+      "sha256": "6bbb797cc0656de4813264ff29184f81c658eecbc92d82cbf7c60f7047c755ce",
+      "role": "Codex pet metadata for Galadriel"
+    },
+    {
+      "source": "C:/Users/scorp/.codex/pets/galadriel/spritesheet.webp",
+      "canonical": "C:/Users/scorp/Documents/Projets_Perso/GaladrielCompanionApp/hermes_core/home/galadriel/avatar-assets/codex-pet/spritesheet.webp",
+      "size": 2404880,
+      "sha256": "2d80b9437c4096e0fdc6b546aaa0c8b5b2c26bde1015633f5ae1d345f4efc828",
+      "role": "Current Codex pet Galadriel spritesheet"
+    },
+    {
+      "source": "C:/Users/scorp/.codex/pets/galadriel/spritesheet.before-framecount-fix.webp",
+      "canonical": "C:/Users/scorp/Documents/Projets_Perso/GaladrielCompanionApp/hermes_core/home/galadriel/avatar-assets/codex-pet/spritesheet.before-framecount-fix.webp",
+      "size": 2518894,
+      "sha256": "7bb8abac8c767e5dc6b7254bc088000377d1b07cf29b0339cf34e18157d6d2fe",
+      "role": "Historical Codex pet backup before frame-count fix"
+    },
+    {
+      "source": "C:/Users/scorp/.codex/pets/galadriel/spritesheet.before-running-row-fix-20260524-215813.webp",
+      "canonical": "C:/Users/scorp/Documents/Projets_Perso/GaladrielCompanionApp/hermes_core/home/galadriel/avatar-assets/codex-pet/spritesheet.before-running-row-fix-20260524-215813.webp",
+      "size": 2604902,
+      "sha256": "0c18887fcb4769bf66565180f58ee4d7d9973d3a00b4ca31fbdc63b6e531abee",
+      "role": "Historical Codex pet backup before running-row fix"
+    },
+    {
+      "source": "C:/Users/scorp/Documents/Projets_Perso/GaladrielCompanionApp/hermes_core/home/galadriel-interface.disabled-20260529-122710/static/galadriel-frame.webp",
+      "canonical": "C:/Users/scorp/Documents/Projets_Perso/GaladrielCompanionApp/hermes_core/home/galadriel/avatar-assets/legacy-interface/galadriel-frame.webp",
+      "size": 4170,
+      "sha256": "ceac7b1edba2e02d6536f33bc6cec52b18867e746252f7963d0ec497e15fe1fa",
+      "role": "Old disabled local web interface frame"
+    },
+    {
+      "source": "C:/Users/scorp/Documents/Projets_Perso/GaladrielCompanionApp/app/src/assets/galadriel-frames",
+      "canonical": "C:/Users/scorp/Documents/Projets_Perso/GaladrielCompanionApp/hermes_core/home/galadriel/avatar-assets/app-galadriel-frames",
+      "frame_count": 72,
+      "role": "72 pre-cut PNG frames used by GaladrielAvatar.tsx, 9 rows x 8 columns"
+    }
+  ]
+}

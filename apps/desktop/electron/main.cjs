@@ -295,7 +295,8 @@ const BOOT_FAKE_STEP_MS = (() => {
   if (!Number.isFinite(raw) || raw <= 0) return 650
   return Math.max(120, raw)
 })()
-const APP_NAME = 'Hermes'
+const APP_NAME = 'Galadriel'
+const APP_USER_MODEL_ID = 'com.scorpheus.galadriel'
 const TITLEBAR_HEIGHT = 34
 const MACOS_TRAFFIC_LIGHTS_HEIGHT = 14
 const WINDOW_BUTTON_POSITION = {
@@ -450,6 +451,9 @@ function previewFileMetadata(filePath, mimeType) {
 }
 
 app.setName(APP_NAME)
+if (IS_WINDOWS) {
+  app.setAppUserModelId(APP_USER_MODEL_ID)
+}
 // Seed the native About panel with the live Hermes version. This is refreshed
 // on every open via the explicit "About" menu handler (refreshAboutPanel), so
 // an in-place `hermes update` mid-session is reflected without an app restart;
@@ -2418,7 +2422,7 @@ function fetchJson(url, token, options = {}) {
 
     req.on('error', reject)
     req.setTimeout(timeoutMs, () => {
-      req.destroy(new Error(`Timed out connecting to Hermes backend after ${timeoutMs}ms`))
+      req.destroy(new Error(`Timed out connecting to Hermes backend ${options.method || 'GET'} ${url} after ${timeoutMs}ms`))
     })
     if (body) req.write(body)
     req.end()
@@ -2492,7 +2496,7 @@ function fetchPublicJson(url, options = {}) {
 
     req.on('error', reject)
     req.setTimeout(timeoutMs, () => {
-      req.destroy(new Error(`Timed out connecting to Hermes backend after ${timeoutMs}ms`))
+      req.destroy(new Error(`Timed out connecting to Hermes backend ${options.method || 'GET'} ${url} after ${timeoutMs}ms`))
     })
     if (body) req.write(body)
     req.end()
@@ -3270,14 +3274,18 @@ function setAndPersistZoomLevel(window, zoomLevel) {
   const next = clampZoomLevel(zoomLevel)
   window.webContents.setZoomLevel(next)
   window.webContents
-    .executeJavaScript(`try { localStorage.setItem(${JSON.stringify(ZOOM_STORAGE_KEY)}, ${JSON.stringify(String(next))}) } catch {}`)
+    .executeJavaScript(
+      `try { localStorage.setItem(${JSON.stringify(ZOOM_STORAGE_KEY)}, ${JSON.stringify(String(next))}) } catch {}`
+    )
     .catch(error => rememberLog(`[zoom] persist failed: ${error?.message || error}`))
 }
 
 function restorePersistedZoomLevel(window) {
   if (!window || window.isDestroyed()) return
   window.webContents
-    .executeJavaScript(`(() => { try { return localStorage.getItem(${JSON.stringify(ZOOM_STORAGE_KEY)}) } catch { return null } })()`)
+    .executeJavaScript(
+      `(() => { try { return localStorage.getItem(${JSON.stringify(ZOOM_STORAGE_KEY)}) } catch { return null } })()`
+    )
     .then(stored => {
       if (stored == null || !window || window.isDestroyed()) return
       const level = clampZoomLevel(Number(stored))
@@ -4136,9 +4144,7 @@ async function requestJsonForProfile(profile, path, method, body) {
   const conn = await ensureBackend(profile)
   const url = `${conn.baseUrl}${path}`
   const opts = { method, body, timeoutMs: DEFAULT_FETCH_TIMEOUT_MS }
-  return conn.authMode === 'oauth'
-    ? fetchJsonViaOauthSession(url, opts)
-    : fetchJson(url, conn.token, opts)
+  return conn.authMode === 'oauth' ? fetchJsonViaOauthSession(url, opts) : fetchJson(url, conn.token, opts)
 }
 
 async function probeRemoteAuthMode(rawUrl) {
@@ -4212,7 +4218,8 @@ async function testDesktopConnectionConfig(input = {}) {
   // The block under test: a per-profile entry or the global remote. Coerce has
   // already normalized the URL and resolved token inheritance for the scope.
   const block = key ? config.profiles?.[key] || null : config.remote
-  const wantRemote = block?.mode === 'remote' || (!key && config.mode === 'remote') || (input.mode === 'remote' && block)
+  const wantRemote =
+    block?.mode === 'remote' || (!key && config.mode === 'remote') || (input.mode === 'remote' && block)
   // ``/api/status`` is public on every gateway (no creds needed), so a
   // reachability test works for local, token, and oauth modes alike — we only
   // need a base URL. For a remote config we normalize the URL from the input;
@@ -4466,7 +4473,9 @@ async function spawnPoolBackend(profile, entry) {
     rememberLog(`Hermes backend for profile "${profile}" exited (${signal || code})`)
     backendPool.delete(profile)
     if (!ready) {
-      rejectStart?.(new Error(`Hermes backend for profile "${profile}" exited before it became ready (${signal || code}).`))
+      rejectStart?.(
+        new Error(`Hermes backend for profile "${profile}" exited before it became ready (${signal || code}).`)
+      )
     }
   })
 
@@ -4684,7 +4693,7 @@ function createWindow() {
     height: 800,
     minWidth: 400,
     minHeight: 620,
-    title: 'Hermes',
+    title: APP_NAME,
     // Frameless title bar on every platform so the renderer can paint the
     // "hide sidebar" button (and other left-side titlebar tools) flush with
     // the top edge — matching the macOS layout where the traffic lights sit
@@ -5097,17 +5106,19 @@ async function mergeRemoteProfileSessions(searchParams, remoteProfiles) {
   let total = (Number(base.total) || 0) - remoteProfiles.reduce((n, p) => n + (profileTotals[p] || 0), 0)
 
   // Swap each remote profile's stale local rows/total for the remote's real ones.
-  await Promise.all(remoteProfiles.map(async name => {
-    const list = await remoteSessionList(name, remoteParams).catch(() => null)
-    if (!list) {
-      delete profileTotals[name] // dead remote → drop its stale local total too
-      return
-    }
-    const rows = rowsOf(list)
-    merged.push(...rows)
-    profileTotals[name] = Number(list.total) || rows.length
-    total += profileTotals[name]
-  }))
+  await Promise.all(
+    remoteProfiles.map(async name => {
+      const list = await remoteSessionList(name, remoteParams).catch(() => null)
+      if (!list) {
+        delete profileTotals[name] // dead remote → drop its stale local total too
+        return
+      }
+      const rows = rowsOf(list)
+      merged.push(...rows)
+      profileTotals[name] = Number(list.total) || rows.length
+      total += profileTotals[name]
+    })
+  )
 
   const recency = s => s?.[order] ?? s?.started_at ?? 0
   merged.sort((a, b) => recency(b) - recency(a))
@@ -5808,7 +5819,6 @@ ipcMain.handle('hermes:uninstall:run', async (_event, payload) => {
   const mode = payload && typeof payload === 'object' ? payload.mode : payload
   return runDesktopUninstall(String(mode || ''))
 })
-
 
 app.whenReady().then(() => {
   if (IS_MAC) {

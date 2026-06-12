@@ -1,0 +1,79 @@
+{
+  "generated_from": "C:\\Users\\scorp\\Documents\\Projets_Perso\\GaladrielCompanionApp\\hermes_core\\home\\galadriel\\avatar-assets",
+  "frame_count": 72,
+  "rows": 9,
+  "columns": 8,
+  "frame_pattern": "/galadriel-avatar/frames/frame_r{row}_c{col}.png",
+  "states": {
+    "idle": {
+      "row": 0,
+      "columns": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "durationMs": 1800
+    },
+    "thinking": {
+      "row": 8,
+      "columns": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "durationMs": 900
+    },
+    "tool_use": {
+      "row": 7,
+      "columns": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "durationMs": 850
+    },
+    "speaking": {
+      "row": 3,
+      "columns": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "durationMs": 700
+    },
+    "error": {
+      "row": 5,
+      "columns": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "durationMs": 1200
+    }
+  }
+}
