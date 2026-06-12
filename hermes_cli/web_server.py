@@ -1710,6 +1710,15 @@ async def get_galadriel_diagnostics():
     return await loop.run_in_executor(None, build_galadriel_diagnostics)
 
 
+@app.post("/api/galadriel/debug/report")
+async def create_galadriel_debug_report():
+    """Persist a local Galadriel diagnostic report without the legacy bridge."""
+    from hermes_cli.galadriel_runtime import build_galadriel_debug_report
+
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, build_galadriel_debug_report)
+
+
 @app.get("/api/system/stats")
 async def get_system_stats():
     """Host + process system stats for the System page.

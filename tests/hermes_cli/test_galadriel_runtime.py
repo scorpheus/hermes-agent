@@ -65,3 +65,17 @@ def test_galadriel_diagnostics_shape_with_mocked_checks(tmp_path, monkeypatch):
     assert payload["checks"]["config"]["memory_provider"] == "honcho"
     assert payload["checks"]["avatar_assets"]["frame_count"] == 2
     assert payload["checks"]["data_paths"]["state_db_exists"] is True
+
+
+def test_debug_report_persists_payload(tmp_path, monkeypatch):
+    home = tmp_path / "GaladrielCompanionApp" / "hermes_core" / "home"
+    home.mkdir(parents=True)
+    monkeypatch.setattr(gr, "get_hermes_home", lambda: home)
+    monkeypatch.setattr(gr, "build_galadriel_diagnostics", lambda: {"ok": True, "checks": {}})
+
+    result = gr.build_galadriel_debug_report(crash_dir=tmp_path / "reports")
+
+    report_path = Path(result["path"])
+    assert result["ok"] is True
+    assert report_path.exists()
+    assert '"source": "native_desktop_backend"' in report_path.read_text(encoding="utf-8")

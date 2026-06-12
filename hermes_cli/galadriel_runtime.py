@@ -14,6 +14,8 @@ import os
 import re
 import subprocess
 import sys
+import time
+import uuid
 from pathlib import Path
 from typing import Any
 from urllib.error import URLError
@@ -188,6 +190,27 @@ def build_galadriel_diagnostics() -> dict[str, Any]:
         "project_root": str(project_root) if project_root is not None else None,
         "checks": checks,
     }
+
+
+def build_galadriel_debug_report(*, crash_dir: Path | None = None) -> dict[str, Any]:
+    """Persist a local Galadriel runtime report for post-mortem inspection."""
+    project_root = _project_root_from_home()
+    if crash_dir is None:
+        if project_root is None:
+            raise RuntimeError("Galadriel project root not detected")
+        crash_dir = project_root / "data" / "crash_reports"
+    crash_dir.mkdir(parents=True, exist_ok=True)
+    report_id = time.strftime("report_%Y%m%d_%H%M%S") + f"_{uuid.uuid4().hex[:6]}"
+    path = crash_dir / f"{report_id}.json"
+    payload = {
+        "ok": True,
+        "report_id": report_id,
+        "created_at": time.time(),
+        "source": "native_desktop_backend",
+        "diagnostics": build_galadriel_diagnostics(),
+    }
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"ok": True, "report_id": report_id, "path": str(path)}
 
 
 def _configured_pronunciations() -> dict[str, str]:
