@@ -3186,6 +3186,8 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
         self.resume_display = CLI_CONFIG["display"].get("resume_display", "full")
         # bell_on_complete: play terminal bell (\a) when agent finishes a response
         self.bell_on_complete = CLI_CONFIG["display"].get("bell_on_complete", False)
+        # bell_on_approval: play an attention sound when a dangerous-command approval panel opens
+        self.bell_on_approval = CLI_CONFIG["display"].get("bell_on_approval", False)
         # show_reasoning: display model thinking/reasoning before the response
         self.show_reasoning = CLI_CONFIG["display"].get("show_reasoning", False)
         _configure_output_history(
@@ -9492,6 +9494,20 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
         _cprint(f"\n{_DIM}  ⏱ Timeout — continuing without sudo{_RST}")
         return ""
 
+    def _ring_attention_bell(self, *, reason: str = "") -> None:
+        """Play a short non-blocking attention sound for modal events."""
+        try:
+            if os.name == "nt":
+                try:
+                    import winsound
+                    winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
+                    return
+                except Exception:
+                    pass
+            print("", end="", flush=True)
+        except Exception:
+            logger.debug("Attention bell failed for %s", reason, exc_info=True)
+
     def _approval_callback(self, command: str, description: str,
                            *, allow_permanent: bool = True) -> str:
         """
@@ -9521,6 +9537,10 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
                 "response_queue": response_queue,
             }
             self._approval_deadline = _time.monotonic() + timeout
+
+            if self.bell_on_approval:
+                self._ring_attention_bell(reason="dangerous-command-approval")
+
 
             # Modal prompt — paint immediately, bypassing the throttle/resize
             # guard. A throttled paint here can be silently dropped (250ms
