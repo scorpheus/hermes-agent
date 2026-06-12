@@ -271,7 +271,7 @@ def _find_bash() -> str:
                 return candidate
 
     # Prefer Git for Windows before PATH. On Windows, PATH often contains
-    # C:\Windows\System32ash.exe, which is the WSL launcher, not Git Bash.
+    # C:/Windows/System32/bash.exe, which is the WSL launcher, not Git Bash.
     # Launching that from native Hermes puts terminal tools in WSL while the
     # session cache paths remain Windows-style (C:/Users/...), breaking every
     # command with hermes-snap/hermes-cwd "No such file" errors.
