@@ -270,10 +270,11 @@ def _find_bash() -> str:
             if os.path.isfile(candidate):
                 return candidate
 
-    found = shutil.which("bash")
-    if found:
-        return found
-
+    # Prefer Git for Windows before PATH. On Windows, PATH often contains
+    # C:\Windows\System32ash.exe, which is the WSL launcher, not Git Bash.
+    # Launching that from native Hermes puts terminal tools in WSL while the
+    # session cache paths remain Windows-style (C:/Users/...), breaking every
+    # command with hermes-snap/hermes-cwd "No such file" errors.
     for candidate in (
         os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"), "Git", "bin", "bash.exe"),
         os.path.join(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"), "Git", "bin", "bash.exe"),
@@ -281,6 +282,15 @@ def _find_bash() -> str:
     ):
         if candidate and os.path.isfile(candidate):
             return candidate
+
+    found = shutil.which("bash")
+    if found:
+        normalized = os.path.normcase(os.path.abspath(found))
+        system_bash = os.path.normcase(os.path.abspath(os.path.join(
+            os.environ.get("SystemRoot", r"C:\Windows"), "System32", "bash.exe"
+        )))
+        if normalized != system_bash:
+            return found
 
     raise RuntimeError(
         "Git Bash not found. Hermes Agent requires Git for Windows on Windows.\n"
