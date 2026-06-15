@@ -27,7 +27,11 @@ export class MessageRenderBoundary extends Component<Props, { error: Error | nul
   }
 
   componentDidUpdate(prev: Props) {
-    if (this.state.error && prev.resetKey !== this.props.resetKey) {
+    if (!this.state.error || !isTransientLookupError(this.state.error)) {
+      return
+    }
+
+    if (prev.resetKey !== this.props.resetKey || prev.children !== this.props.children) {
       this.setState({ error: null })
     }
   }

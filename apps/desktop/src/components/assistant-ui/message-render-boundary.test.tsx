@@ -64,6 +64,25 @@ describe('MessageRenderBoundary', () => {
     spy.mockRestore()
   })
 
+  it('retries transient lookup errors on the next child update even when the message signature is unchanged', () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+
+    const { rerender } = render(
+      <MessageRenderBoundary resetKey="same">
+        <Boom error={lookupError} />
+      </MessageRenderBoundary>
+    )
+
+    rerender(
+      <MessageRenderBoundary resetKey="same">
+        <div>recovered without signature change</div>
+      </MessageRenderBoundary>
+    )
+
+    expect(screen.getByText('recovered without signature change')).toBeTruthy()
+    spy.mockRestore()
+  })
+
   it('re-throws unrelated errors so real bugs still surface', () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
 
