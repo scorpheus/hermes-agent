@@ -243,8 +243,8 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "perMachine": false,
-      "shortcutName": "Hermes",
-      "uninstallDisplayName": "Hermes",
+      "shortcutName": "Galadriel",
+      "uninstallDisplayName": "Galadriel",
       "warningsAsErrors": false
     }
   }
