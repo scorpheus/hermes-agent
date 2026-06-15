@@ -22,6 +22,10 @@ async function rejectsWithCode(promise, code) {
   })
 }
 
+test('default desktop REST timeout tolerates busy local backend stalls', () => {
+  assert.equal(DEFAULT_FETCH_TIMEOUT_MS, 60_000)
+})
+
 test('resolveTimeoutMs falls back to defaults and accepts overrides', () => {
   assert.equal(resolveTimeoutMs(undefined), DEFAULT_FETCH_TIMEOUT_MS)
   assert.equal(resolveTimeoutMs(0), DEFAULT_FETCH_TIMEOUT_MS)

@@ -46,6 +46,7 @@ import type {
 
 const DEFAULT_GATEWAY_REQUEST_TIMEOUT_MS = 30_000
 const SESSION_LIST_REQUEST_TIMEOUT_MS = 60_000
+const SESSION_MESSAGES_REQUEST_TIMEOUT_MS = 60_000
 const AUDIO_TRANSCRIPTION_REQUEST_TIMEOUT_MS = 120_000
 
 export type {
@@ -238,7 +239,8 @@ export function getSessionMessages(id: string, profile?: string | null): Promise
 
   return window.hermesDesktop.api<SessionMessagesResponse>({
     ...(profile ? { profile } : {}),
-    path: `/api/sessions/${encodeURIComponent(id)}/messages${suffix}`
+    path: `/api/sessions/${encodeURIComponent(id)}/messages${suffix}`,
+    timeoutMs: SESSION_MESSAGES_REQUEST_TIMEOUT_MS
   })
 }
 
