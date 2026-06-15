@@ -984,9 +984,31 @@
     if (!filteredBoard) return null;
 
     const renderMd = !config || config.render_markdown !== false;
+    const visibleTaskCount = filteredBoard.columns.reduce(function (n, c) {
+      return n + ((c.tasks && c.tasks.length) || 0);
+    }, 0);
+    const totalTaskCount = boardData.columns.reduce(function (n, c) {
+      return n + ((c.tasks && c.tasks.length) || 0);
+    }, 0);
+    const activeBoard = boardList.find(function (b) { return b.slug === board; });
+    const activeBoardName = (activeBoard && (activeBoard.name || activeBoard.slug)) || board || "default";
 
     return h(ErrorBoundary, null,
       h("div", { className: "hermes-kanban flex flex-col gap-4" },
+        h("div", { className: "hermes-kanban-hero" },
+          h("div", { className: "hermes-kanban-hero-kicker" }, "Galadriel / Kanban"),
+          h("div", { className: "hermes-kanban-hero-row" },
+            h("div", null,
+              h("h1", { className: "hermes-kanban-hero-title" }, "Tableau des travaux"),
+              h("p", { className: "hermes-kanban-hero-copy" },
+                "Une veille nocturne pour garder le fil des agents, des blocages et des décisions."),
+            ),
+            h("div", { className: "hermes-kanban-hero-stats" },
+              h("span", null, "Tableau: ", h("strong", null, activeBoardName)),
+              h("span", null, "Cartes: ", h("strong", null, `${visibleTaskCount}/${totalTaskCount}`)),
+            ),
+          ),
+        ),
         h(BoardSwitcher, {
           board: board,
           boardList: boardList,
@@ -1969,7 +1991,7 @@
     const { t } = useI18n();
     const tenants = (props.board && props.board.tenants) || [];
     const assignees = (props.board && props.board.assignees) || [];
-    return h("div", { className: "flex flex-wrap items-end gap-3" },
+    return h("div", { className: "hermes-kanban-toolbar flex flex-wrap items-end gap-3" },
       h("div", { className: "flex flex-col gap-1",
                  title: "Fuzzy-match tasks by id, title, or description. Matches across all columns." },
         h(Label, { className: "text-xs text-muted-foreground" }, tx(t, "search", "Search")),
