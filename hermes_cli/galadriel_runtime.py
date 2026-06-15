@@ -33,7 +33,7 @@ _LOCAL_SERVICE_URLS = {
 }
 
 _ORAL_PRONUNCIATIONS = {
-    "Scorpheus": "Scorpféuss",
+    "Scorpheus": "Skorféuss",
 }
 
 
@@ -287,18 +287,41 @@ def extract_oral_written_split(user_message: str) -> tuple[str, str] | None:
     return apply_oral_pronunciations(oral), written
 
 
-def reply_excerpt_for_spoken_summary(assistant_reply: str, *, max_chars: int = 220) -> str:
-    text = re.sub(r"```[\s\S]*?```", " ", assistant_reply)
-    text = re.sub(r"`([^`]+)`", r"\1", text)
-    text = re.sub(r"https?://\S+", "", text)
-    text = re.sub(r"[*_#>]+", "", text)
-    text = re.sub(r"\s+", " ", text).strip()
+_TECHNICAL_LINE_RE = re.compile(
+    r"(?:[A-Za-z]:[\\/]|(?:^|\s)/(?:mnt|home|tmp|var|etc|Users)/|[\\/][\w.-]+[\\/][\w.-]+|"
+    r"\b(?:traceback|diff --git|@@|changed_files|tests_run|metadata|json|stdout|stderr|exit_code)\b|"
+    r"^\s*(?:[-*+]\s*)?[\w./\\-]+\.(?:py|ts|tsx|js|json|yaml|yml|md|toml)(?::\d+)?)",
+    re.IGNORECASE,
+)
+
+
+def _strip_technical_oral_details(text: str) -> str:
+    """Remove details that belong on screen, not in Galadriel's spoken channel."""
+    without_blocks = re.sub(r"```[\s\S]*?```", " ", text)
+    without_urls = re.sub(r"https?://\S+", "", without_blocks)
+    lines = []
+    for raw_line in without_urls.splitlines():
+        line = raw_line.strip()
+        if not line or _TECHNICAL_LINE_RE.search(line):
+            continue
+        lines.append(line)
+    cleaned = " ".join(lines)
+    cleaned = re.sub(r"`([^`]+)`", r"\1", cleaned)
+    cleaned = re.sub(r"[*_#>]+", "", cleaned)
+    return re.sub(r"\s+", " ", cleaned).strip()
+
+
+def reply_excerpt_for_spoken_summary(assistant_reply: str, *, max_chars: int = 180) -> str:
+    text = _strip_technical_oral_details(assistant_reply)
     if not text:
         return apply_oral_pronunciations("J’ai préparé la réponse, Scorpheus. Le texte complet reste affiché à l’écran.")
     sentences = re.split(r"(?<=[.!?…])\s+", text)
     summary = sentences[0].strip()
     if len(summary) < 40 and len(sentences) > 1:
         summary = f"{summary} {sentences[1].strip()}"
+    words = summary.split()
+    if len(words) > 30:
+        summary = " ".join(words[:30]).rstrip(" ,;:") + "…"
     if len(summary) > max_chars:
         summary = summary[: max_chars - 1].rstrip() + "…"
     return apply_oral_pronunciations(summary)

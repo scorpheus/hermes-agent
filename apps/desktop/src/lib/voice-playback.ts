@@ -1,4 +1,4 @@
-import { speakText } from '@/hermes'
+import { getGaladrielSpeechSummary, speakText } from '@/hermes'
 import {
   $voicePlayback,
   setVoicePlaybackState,
@@ -31,6 +31,29 @@ export interface VoicePlaybackOptions {
   source: VoicePlaybackSource
 }
 
+async function prepareTextForSpeech(text: string, options: VoicePlaybackOptions): Promise<string> {
+  const sanitized = sanitizeTextForSpeech(text)
+
+  if (!sanitized) {
+    return ''
+  }
+
+  if (options.source !== 'read-aloud') {
+    return sanitized
+  }
+
+  try {
+    const summary = await getGaladrielSpeechSummary('', text)
+    const spokenSummary = sanitizeTextForSpeech(summary.spoken_summary)
+
+    return spokenSummary || sanitized
+  } catch {
+    // Keep the existing Edge/provider fallback path intact if the optional
+    // spoken-summary endpoint is unavailable.
+    return sanitized
+  }
+}
+
 export function stopVoicePlayback() {
   sequence += 1
   currentStop?.()
@@ -55,7 +78,7 @@ export function stopVoicePlayback() {
 export async function playSpeechText(text: string, options: VoicePlaybackOptions): Promise<boolean> {
   stopVoicePlayback()
 
-  const speakableText = sanitizeTextForSpeech(text)
+  const speakableText = await prepareTextForSpeech(text, options)
 
   if (!speakableText) {
     return false

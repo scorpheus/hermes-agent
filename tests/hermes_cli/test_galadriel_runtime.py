@@ -8,21 +8,37 @@ from hermes_cli import galadriel_runtime as gr
 
 
 def test_oral_written_split_keeps_written_clean(monkeypatch):
-    monkeypatch.setattr(gr, "load_config", lambda: {"voice": {"pronunciations": {"Scorpheus": "Scorpféuss"}}})
+    monkeypatch.setattr(gr, "load_config", lambda: {"voice": {"pronunciations": {"Scorpheus": "Skorféuss"}}})
 
     split = gr.extract_oral_written_split("à l'oral bonjour Scorpheus et à l'écrit Galadriel")
 
-    assert split == ("Bonjour Scorpféuss.", "Galadriel.")
+    assert split == ("Bonjour Skorféuss.", "Galadriel.")
 
 
 def test_spoken_summary_falls_back_to_reply_excerpt(monkeypatch):
-    monkeypatch.setattr(gr, "load_config", lambda: {"voice": {"pronunciations": {"Scorpheus": "Scorpféuss"}}})
+    monkeypatch.setattr(gr, "load_config", lambda: {"voice": {"pronunciations": {"Scorpheus": "Skorféuss"}}})
 
     payload = gr.derive_spoken_summary("résume", "Bonjour, Scorpheus. Le détail reste écrit.")
 
     assert payload["source"] == "reply_excerpt"
-    assert payload["spoken_summary"].startswith("Bonjour, Scorpféuss")
+    assert payload["spoken_summary"].startswith("Bonjour, Skorféuss")
     assert payload["display_spoken_summary"].startswith("Bonjour, Scorpheus")
+
+
+def test_spoken_summary_filters_screen_only_technical_details(monkeypatch):
+    monkeypatch.setattr(gr, "load_config", lambda: {"voice": {"pronunciations": {"Scorpheus": "Skorféuss"}}})
+
+    reply = """
+    C:\\Users\\scorp\\Documents\\Projets_Perso\\GaladrielCompanionApp\\hermes_core\\hermes-agent\\apps\\desktop\\src\\lib\\voice-playback.ts
+    changed_files: ["hermes_cli/galadriel_runtime.py"]
+    C’est prêt, Scorpheus. Les détails techniques restent affichés à l’écran.
+    """
+
+    payload = gr.derive_spoken_summary("résume", reply)
+
+    assert payload["spoken_summary"] == "C’est prêt, Skorféuss. Les détails techniques restent affichés à l’écran."
+    assert "C:\\" not in payload["spoken_summary"]
+    assert "changed_files" not in payload["spoken_summary"]
 
 
 def test_galadriel_project_root_detects_companion_layout(tmp_path, monkeypatch):
