@@ -1616,6 +1616,135 @@ def _transcribe_elevenlabs(file_path: str, model_name: str) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Optional local LLM post-processing
+# ---------------------------------------------------------------------------
+
+
+DEFAULT_STT_POSTPROCESS_BASE_URL = "http://127.0.0.1:8080/v1"
+DEFAULT_STT_POSTPROCESS_MODEL = "honcho-qwen14b-128k-q4"
+DEFAULT_STT_POSTPROCESS_TIMEOUT = 20
+DEFAULT_STT_POSTPROCESS_GLOSSARY = (
+    "Scorpheus",
+    "Galadriel",
+    "Hermes",
+    "Honcho",
+    "Vehigraph",
+    "Le Repaire des Mécanos",
+    "Barman",
+    "Codex",
+    "llama",
+    "llama.cpp",
+    "Qwen",
+    "BGE-M3",
+    "FastAPI",
+    "Tauri",
+    "Discord",
+    "CMake",
+    "C++",
+)
+
+
+def _stt_postprocess_enabled(stt_config: Dict[str, Any]) -> bool:
+    cfg = stt_config.get("postprocess", {})
+    if not isinstance(cfg, dict):
+        return False
+    return is_truthy_value(cfg.get("enabled", False), default=False)
+
+
+def _build_stt_postprocess_prompt(transcript: str, cfg: Dict[str, Any]) -> str:
+    glossary = cfg.get("glossary", DEFAULT_STT_POSTPROCESS_GLOSSARY)
+    if isinstance(glossary, str):
+        glossary_items = [item.strip() for item in glossary.split(",") if item.strip()]
+    elif isinstance(glossary, (list, tuple)):
+        glossary_items = [str(item).strip() for item in glossary if str(item).strip()]
+    else:
+        glossary_items = list(DEFAULT_STT_POSTPROCESS_GLOSSARY)
+    glossary_text = ", ".join(glossary_items)
+    return (
+        "Corrige uniquement les erreurs évidentes d'une transcription vocale française.\n"
+        "Ne reformule pas le message. Ne change pas l'intention. N'ajoute aucune information.\n"
+        "Garde le style oral, les hésitations utiles et les commandes telles quelles.\n"
+        "Corrige surtout les noms propres, termes techniques, ponctuation minimale et accords flagrants.\n"
+        "Retourne uniquement la transcription corrigée, sans commentaire ni guillemets.\n\n"
+        f"Vocabulaire probable: {glossary_text}\n\n"
+        f"Transcription brute:\n{transcript}"
+    )
+
+
+def _maybe_postprocess_transcription_result(
+    result: Dict[str, Any],
+    stt_config: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Optionally correct a successful STT transcript with a local chat model.
+
+    This is intentionally conservative: failures keep the raw transcript, and
+    the local LLM is prompted to correct only obvious transcription mistakes.
+    """
+    transcript = str(result.get("transcript") or "").strip()
+    if not result.get("success") or not transcript or not _stt_postprocess_enabled(stt_config):
+        return result
+
+    cfg = stt_config.get("postprocess", {})
+    if not isinstance(cfg, dict):
+        return result
+
+    base_url = str(cfg.get("base_url") or DEFAULT_STT_POSTPROCESS_BASE_URL).rstrip("/")
+    model = str(cfg.get("model") or DEFAULT_STT_POSTPROCESS_MODEL)
+    try:
+        timeout = float(cfg.get("timeout", DEFAULT_STT_POSTPROCESS_TIMEOUT))
+    except (TypeError, ValueError):
+        timeout = DEFAULT_STT_POSTPROCESS_TIMEOUT
+
+    result.setdefault("raw_transcript", transcript)
+    payload = {
+        "model": model,
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "Tu es un correcteur de transcription STT prudent. "
+                    "Tu ne dois jamais inventer ni résumer."
+                ),
+            },
+            {"role": "user", "content": _build_stt_postprocess_prompt(transcript, cfg)},
+        ],
+        "temperature": 0,
+        "max_tokens": max(64, min(1024, len(transcript) + 128)),
+    }
+
+    try:
+        import requests
+
+        response = requests.post(
+            f"{base_url}/chat/completions",
+            json=payload,
+            timeout=timeout,
+        )
+        if response.status_code != 200:
+            detail = getattr(response, "text", "")[:300]
+            result["postprocess_error"] = f"HTTP {response.status_code}: {detail}"
+            logger.warning("STT postprocess failed: %s", result["postprocess_error"])
+            return result
+        data = response.json()
+        message = data.get("choices", [{}])[0].get("message", {})
+        if isinstance(message, dict):
+            corrected = str(message.get("content") or "").strip()
+        else:
+            corrected = _extract_transcript_text(message).strip()
+        if not corrected:
+            result["postprocess_error"] = "local LLM returned empty transcript"
+            return result
+        result["transcript"] = corrected
+        result["postprocessed_by"] = "local_llama"
+        result["postprocess_model"] = model
+        return result
+    except Exception as exc:  # noqa: BLE001 — STT must degrade to raw transcript
+        result["postprocess_error"] = str(exc)
+        logger.warning("STT postprocess failed; keeping raw transcript: %s", exc)
+        return result
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -1660,38 +1789,52 @@ def transcribe_audio(file_path: str, model: Optional[str] = None) -> Dict[str, A
         model_name = _normalize_local_model(
             model or local_cfg.get("model", DEFAULT_LOCAL_MODEL)
         )
-        return _transcribe_local(file_path, model_name)
+        return _maybe_postprocess_transcription_result(
+            _transcribe_local(file_path, model_name), stt_config
+        )
 
     if provider == "local_command":
         local_cfg = stt_config.get("local", {})
         model_name = _normalize_local_command_model(
             model or local_cfg.get("model", DEFAULT_LOCAL_MODEL)
         )
-        return _transcribe_local_command(file_path, model_name)
+        return _maybe_postprocess_transcription_result(
+            _transcribe_local_command(file_path, model_name), stt_config
+        )
 
     if provider == "groq":
         model_name = model or DEFAULT_GROQ_STT_MODEL
-        return _transcribe_groq(file_path, model_name)
+        return _maybe_postprocess_transcription_result(
+            _transcribe_groq(file_path, model_name), stt_config
+        )
 
     if provider == "openai":
         openai_cfg = stt_config.get("openai", {})
         model_name = model or openai_cfg.get("model", DEFAULT_STT_MODEL)
-        return _transcribe_openai(file_path, model_name)
+        return _maybe_postprocess_transcription_result(
+            _transcribe_openai(file_path, model_name), stt_config
+        )
 
     if provider == "mistral":
         mistral_cfg = stt_config.get("mistral", {})
         model_name = model or mistral_cfg.get("model", DEFAULT_MISTRAL_STT_MODEL)
-        return _transcribe_mistral(file_path, model_name)
+        return _maybe_postprocess_transcription_result(
+            _transcribe_mistral(file_path, model_name), stt_config
+        )
 
     if provider == "xai":
         # xAI Grok STT doesn't use a model parameter — pass through for logging
         model_name = model or "grok-stt"
-        return _transcribe_xai(file_path, model_name)
+        return _maybe_postprocess_transcription_result(
+            _transcribe_xai(file_path, model_name), stt_config
+        )
 
     if provider == "elevenlabs":
         elevenlabs_cfg = stt_config.get("elevenlabs", {})
         model_name = model or elevenlabs_cfg.get("model_id", DEFAULT_ELEVENLABS_STT_MODEL)
-        return _transcribe_elevenlabs(file_path, model_name)
+        return _maybe_postprocess_transcription_result(
+            _transcribe_elevenlabs(file_path, model_name), stt_config
+        )
 
     # User-declared command-type provider
     # (``stt.providers.<name>: type: command``). Fires after the built-in
@@ -1701,12 +1844,15 @@ def transcribe_audio(file_path: str, model: Optional[str] = None) -> Dict[str, A
     # local than a plugin install (same precedence rule as TTS PR #17843).
     command_provider_config = _resolve_command_stt_provider_config(provider, stt_config)
     if command_provider_config is not None:
-        return _transcribe_command_stt(
-            file_path,
-            provider,
-            command_provider_config,
+        return _maybe_postprocess_transcription_result(
+            _transcribe_command_stt(
+                file_path,
+                provider,
+                command_provider_config,
+                stt_config,
+                model_override=model,
+            ),
             stt_config,
-            model_override=model,
         )
 
     # Plugin-registered STT backend (e.g. OpenRouter, SenseAudio,
@@ -1733,7 +1879,7 @@ def transcribe_audio(file_path: str, model: Optional[str] = None) -> Dict[str, A
         language=plugin_language,
     )
     if plugin_result is not None:
-        return plugin_result
+        return _maybe_postprocess_transcription_result(plugin_result, stt_config)
 
     # No provider available
     return {

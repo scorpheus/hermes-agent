@@ -46,6 +46,7 @@ import type {
 
 const DEFAULT_GATEWAY_REQUEST_TIMEOUT_MS = 30_000
 const SESSION_LIST_REQUEST_TIMEOUT_MS = 60_000
+const AUDIO_TRANSCRIPTION_REQUEST_TIMEOUT_MS = 120_000
 
 export type {
   ActionResponse,
@@ -722,6 +723,7 @@ export function transcribeAudio(dataUrl: string, mimeType?: string): Promise<Aud
   return window.hermesDesktop.api<AudioTranscriptionResponse>({
     path: '/api/audio/transcribe',
     method: 'POST',
+    timeoutMs: AUDIO_TRANSCRIPTION_REQUEST_TIMEOUT_MS,
     body: {
       data_url: dataUrl,
       mime_type: mimeType
