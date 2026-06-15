@@ -199,9 +199,65 @@ class TestCmdUpdateBranchFallback:
         ), patch.object(hm, "_sync_with_upstream_if_needed") as sync_mock:
             cmd_update(mock_args)
 
-        sync_mock.assert_called_once_with(["git"], PROJECT_ROOT)
+        sync_mock.assert_called_once()
+        sync_args = sync_mock.call_args.args
+        assert sync_args[0][0] == "git"
+        assert sync_args[1] == PROJECT_ROOT
         captured = capsys.readouterr()
         assert "Already up to date!" in captured.out
+
+    @patch("subprocess.run")
+    def test_fork_upstream_sync_merges_diverged_fork_without_force_push(
+        self, mock_run, tmp_path, capsys
+    ):
+        """Forks with local commits should merge upstream/main, not skip or force-push.
+
+        Galadriel keeps local commits on its fork. When upstream advances too,
+        a normal merge is the correct git operation: preserve our branch, bring
+        upstream in, and push the result back to origin without rewriting
+        history.
+        """
+        from hermes_cli import main as hm
+
+        def side_effect(cmd, **kwargs):
+            joined = " ".join(str(c) for c in cmd)
+            if "remote get-url upstream" in joined:
+                return subprocess.CompletedProcess(
+                    cmd,
+                    0,
+                    stdout="https://github.com/NousResearch/hermes-agent.git\n",
+                    stderr="",
+                )
+            if "fetch upstream main" in joined:
+                return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+            if "rev-list --count upstream/main..origin/main" in joined:
+                return subprocess.CompletedProcess(cmd, 0, stdout="2\n", stderr="")
+            if "rev-list --count origin/main..upstream/main" in joined:
+                return subprocess.CompletedProcess(cmd, 0, stdout="3\n", stderr="")
+            if "merge --no-edit upstream/main" in joined:
+                return subprocess.CompletedProcess(
+                    cmd, 0, stdout="Merge made by ort.\n", stderr=""
+                )
+            if "push origin main" in joined:
+                return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+            raise AssertionError(f"unexpected command: {cmd}")
+
+        mock_run.side_effect = side_effect
+
+        changed = hm._sync_with_upstream_if_needed(["git"], tmp_path)
+
+        assert changed is True
+        commands = [
+            " ".join(str(a) for a in call.args[0])
+            for call in mock_run.call_args_list
+        ]
+        assert any("merge --no-edit upstream/main" in c for c in commands)
+        push_cmds = [c for c in commands if "push origin main" in c]
+        assert push_cmds == ["git push origin main"]
+        assert not any("--force" in c for c in push_cmds)
+
+        out = capsys.readouterr().out
+        assert "Merging upstream/main into local main" in out
 
     @patch("shutil.which")
     @patch("subprocess.run")
