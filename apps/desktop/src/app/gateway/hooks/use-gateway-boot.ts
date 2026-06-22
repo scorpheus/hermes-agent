@@ -140,15 +140,7 @@ export function useGatewayBoot({
         }
 
         publish(conn)
-        // Re-mint the WS URL before reconnecting. OAuth tickets are single-use
-        // with a short TTL, so the ticket baked into the cached conn.wsUrl is
-        // dead on every reconnect after the initial boot — reusing it surfaces
-        // as an opaque "Could not connect to Hermes gateway". resolveGatewayWsUrl
-        // mints a fresh ticket (or throws a reauth error in OAuth mode rather
-        // than connecting with a stale one). For local/token gateways the URL
-        // carries a long-lived token and the re-mint is a cheap no-op.
-        const wsUrl = await resolveGatewayWsUrl(desktop, conn)
-        await gateway.connect(wsUrl)
+        await connectGatewayWithRetry(conn, { phase: 'reconnect', timeoutMs: 10_000 })
 
         if (cancelled) {
           return
@@ -221,6 +213,54 @@ export function useGatewayBoot({
     setPrimaryGateway(gateway, normalizeProfileKey($activeGatewayProfile.get()))
     // Secondary (background-profile) sockets funnel into the same handler.
     configureGatewayRegistry({ onEvent: event => callbacksRef.current.handleGatewayEvent(event) })
+
+    async function connectGatewayWithRetry(
+      conn: HermesConnection,
+      { phase, timeoutMs = 10_000 }: { phase: 'boot' | 'reconnect'; timeoutMs?: number }
+    ) {
+      const startedAt = Date.now()
+      let attempt = 0
+      let lastError: unknown = null
+
+      while (!cancelled && Date.now() - startedAt <= timeoutMs) {
+        try {
+          // Re-mint the WS URL before every attempt. OAuth tickets are single-use
+          // and short-lived; local/token URLs are cheap to refresh and safe to reuse.
+          const wsUrl = await resolveGatewayWsUrl(desktop, conn)
+          await gateway.connect(wsUrl)
+          return
+        } catch (error) {
+          lastError = error
+          if (isGatewayReauthRequired(error)) {
+            throw error
+          }
+
+          const elapsed = Date.now() - startedAt
+          const remaining = timeoutMs - elapsed
+          if (remaining <= 0) {
+            break
+          }
+
+          const delay = Math.min(1_500, 300 * 2 ** Math.min(attempt, 3), remaining)
+          attempt += 1
+
+          if (phase === 'boot') {
+            setDesktopBootStep({
+              phase: 'renderer.gateway.retry',
+              message: `${translateNow('boot.steps.connectingGateway')} (retry ${attempt})`,
+              progress: 95
+            })
+          }
+
+          await new Promise(resolve => setTimeout(resolve, delay))
+        }
+      }
+
+      if (lastError instanceof Error) {
+        throw lastError
+      }
+      throw new Error('Could not connect to Hermes gateway')
+    }
 
     const offState = gateway.onState(st => {
       // Mirror to the composer only while the primary is the active profile —
@@ -327,13 +367,7 @@ export function useGatewayBoot({
           progress: 95
         })
         publish(conn)
-        // Mint a fresh WS URL right before connecting. For OAuth gateways the
-        // ticket is single-use with a short TTL, so the ticket baked into
-        // conn.wsUrl is stale; resolveGatewayWsUrl() re-mints it and, on
-        // failure, throws a reauth error rather than connecting with a dead
-        // ticket (which would surface as an opaque "connection closed").
-        const wsUrl = await resolveGatewayWsUrl(desktop, conn)
-        await gateway.connect(wsUrl)
+        await connectGatewayWithRetry(conn, { phase: 'boot', timeoutMs: 12_000 })
 
         if (cancelled) {
           return

@@ -1634,10 +1634,40 @@ function repairMacUpdaterHelper(updater) {
 // Path to the venv shim whose lock decides whether `hermes update` can write
 // fresh entry points. On Windows this is the file the running backend
 // `hermes.exe` holds open; on POSIX it's never mandatory-locked.
+function resolveVenvRoot(updateRoot) {
+  if (!updateRoot) return null
+  const relativeRoots = IS_WINDOWS
+    ? [path.join('.venv'), path.join('venv')]
+    : [path.join('.venv'), path.join('venv')]
+  for (const relativeRoot of relativeRoots) {
+    const candidate = path.join(updateRoot, relativeRoot)
+    if (directoryExists(candidate)) return candidate
+  }
+  return path.join(updateRoot, 'venv')
+}
+
+function venvBinPath(updateRoot) {
+  const root = resolveVenvRoot(updateRoot)
+  return root ? path.join(root, IS_WINDOWS ? 'Scripts' : 'bin') : null
+}
+
 function venvHermesShimPath(updateRoot) {
-  return IS_WINDOWS
-    ? path.join(updateRoot, 'venv', 'Scripts', 'hermes.exe')
-    : path.join(updateRoot, 'venv', 'bin', 'hermes')
+  const bin = venvBinPath(updateRoot)
+  return bin ? path.join(bin, IS_WINDOWS ? 'hermes.exe' : 'hermes') : ''
+}
+
+function resolveGaladrielUpdaterScript(updateRoot) {
+  if (!IS_WINDOWS || !updateRoot) return null
+  const hermesCore = path.dirname(updateRoot)
+  const candidates = [
+    path.join(hermesCore, 'Update-Galadriel-Windows.ps1'),
+    path.join(updateRoot, 'scripts', 'update-galadriel-windows.ps1')
+  ]
+  return candidates.find(fileExists) || null
+}
+
+function quotePowerShellArgumentForDisplay(value) {
+  return `'${String(value).replace(/'/g, "''")}'`
 }
 
 // Best-effort lock probe mirroring the Rust updater's is_locked(): a running
@@ -1765,6 +1795,47 @@ async function applyUpdates(opts = {}) {
   updateInFlight = true
 
   try {
+    const updateRoot = resolveUpdateRoot()
+    const galadrielUpdater = resolveGaladrielUpdaterScript(updateRoot)
+    if (galadrielUpdater) {
+      emitUpdateProgress({
+        stage: 'restart',
+        message: 'Handing off to the Galadriel safe updater with TUI fallback…',
+        percent: 100
+      })
+      await releaseBackendLockForUpdate(updateRoot)
+
+      const venvBin = venvBinPath(updateRoot)
+      const updaterArgs = [
+        '-NoProfile',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-File',
+        galadrielUpdater,
+        '-FallbackToTui',
+        '-RelaunchDesktop'
+      ]
+      const child = spawn('powershell.exe', updaterArgs, {
+        cwd: path.dirname(galadrielUpdater),
+        env: {
+          ...process.env,
+          HERMES_HOME,
+          PATH: [path.join(HERMES_HOME, 'node', 'bin'), venvBin, process.env.PATH].filter(Boolean).join(path.delimiter)
+        },
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: false
+      })
+      child.unref()
+
+      const display = `powershell.exe -NoProfile -ExecutionPolicy Bypass -File ${quotePowerShellArgumentForDisplay(galadrielUpdater)} -FallbackToTui -RelaunchDesktop`
+      rememberLog(`[updates] launched Galadriel safe updater: ${display}; exiting desktop`)
+      setTimeout(() => {
+        app.quit()
+      }, 600)
+      return { ok: true, handedOff: true, updater: galadrielUpdater, fallback: 'tui' }
+    }
+
     const updater = resolveUpdaterBinary()
     if (!updater && !IS_WINDOWS) {
       // macOS/Linux drag-install: no staged Tauri hermes-setup. Unlike Windows
@@ -1775,6 +1846,7 @@ async function applyUpdates(opts = {}) {
       // with the freshly built one and relaunch.
       return await applyUpdatesPosixInApp(opts)
     }
+
     if (!updater) {
       // No staged updater binary — this is a CLI-installed user (they ran
       // `hermes desktop`, never the Tauri installer that self-copies
@@ -1785,7 +1857,6 @@ async function applyUpdates(opts = {}) {
       // silently switch a bb/gui (or any non-main) install off-branch. Mirror
       // the GUI button's contract: append --branch <current> for non-main
       // checkouts, keep it bare for main so the card stays clean.
-      const updateRoot = resolveUpdateRoot()
       let command = 'hermes update'
       try {
         const head = await runGit(['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: updateRoot })
@@ -1805,7 +1876,6 @@ async function applyUpdates(opts = {}) {
     emitUpdateProgress({ stage: 'restart', message: 'Handing off to the Hermes updater…', percent: 100 })
     repairMacUpdaterHelper(updater)
 
-    const updateRoot = resolveUpdateRoot()
     const { branch: configuredBranch } = readDesktopUpdateConfig()
     const branch = await resolveHealedBranch(updateRoot, configuredBranch || DEFAULT_UPDATE_BRANCH)
     const updaterArgs = ['--update', '--branch', branch]
@@ -1813,7 +1883,7 @@ async function applyUpdates(opts = {}) {
     if (targetApp) {
       updaterArgs.push('--target-app', targetApp)
     }
-    const venvBin = path.join(updateRoot, 'venv', IS_WINDOWS ? 'Scripts' : 'bin')
+    const venvBin = venvBinPath(updateRoot)
 
     // Stop our own backend(s) and wait for the venv shim to unlock BEFORE we
     // spawn the updater. Without this the updater races a still-locked
@@ -1861,7 +1931,7 @@ async function handOffWindowsBootstrapRecovery(reason) {
   const branch = directoryExists(path.join(updateRoot, '.git'))
     ? await resolveHealedBranch(updateRoot, configuredBranch || DEFAULT_UPDATE_BRANCH)
     : configuredBranch || DEFAULT_UPDATE_BRANCH
-  const venvBin = path.join(updateRoot, 'venv', IS_WINDOWS ? 'Scripts' : 'bin')
+  const venvBin = venvBinPath(updateRoot)
   const venvHermes = path.join(venvBin, IS_WINDOWS ? 'hermes.exe' : 'hermes')
   const updaterArgs = fileExists(venvHermes) ? ['--update', '--branch', branch] : ['--repair', '--branch', branch]
 
@@ -1891,8 +1961,9 @@ async function handOffWindowsBootstrapRecovery(reason) {
 // Resolve the hermes CLI to drive an in-app update: prefer the venv shim in
 // the install we're updating, fall back to `hermes` on PATH.
 function resolveHermesCliBinary(updateRoot) {
-  const venvHermes = path.join(updateRoot, 'venv', 'bin', 'hermes')
-  if (fileExists(venvHermes)) return venvHermes
+  const bin = venvBinPath(updateRoot)
+  const venvHermes = bin ? path.join(bin, IS_WINDOWS ? 'hermes.exe' : 'hermes') : null
+  if (venvHermes && fileExists(venvHermes)) return venvHermes
   return findOnPath('hermes') || null
 }
 

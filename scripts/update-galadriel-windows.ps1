@@ -1,18 +1,31 @@
+# See scripts/update-galadriel-windows.md for the operational protocol.
 param(
     [switch]$Check,
     [switch]$NoPush,
     [switch]$NoInstall,
-    [switch]$NoNpm
+    [switch]$NoNpm,
+    # Open the Windows TUI if the update fails after the Desktop/app has handed off.
+    [switch]$FallbackToTui,
+    # Relaunch the full Companion stack after a successful Desktop-initiated update.
+    [switch]$RelaunchDesktop
 )
 
 $ErrorActionPreference = 'Stop'
 
 $Repository = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $HermesCore = Split-Path -Parent $Repository
+$ProjectRoot = Split-Path -Parent $HermesCore
 $HomeDir = Join-Path $HermesCore 'home'
+$DataDir = Join-Path $HermesCore 'data'
+$LogDir = Join-Path $DataDir 'logs'
+$BackupDir = Join-Path $DataDir 'backups'
+$FallbackLog = Join-Path $LogDir 'galadriel-update-fallback.log'
+$TuiLauncher = Join-Path $HermesCore 'Start-Hermes-Windows.bat'
+$DesktopLauncher = Join-Path $ProjectRoot 'Start-GaladrielCompanion.bat'
 $OriginUrl = 'https://github.com/scorpheus/hermes-agent.git'
 $UpstreamUrl = 'https://github.com/NousResearch/hermes-agent.git'
 $DisabledPushUrl = 'DISABLED'
+$RecoveryBundle = $null
 
 function Invoke-Step([string]$Label, [scriptblock]$Body) {
     Write-Host ''
@@ -49,6 +62,81 @@ function Resolve-PythonExe() {
         if (Test-Path $candidate) { return $candidate }
     }
     throw "Python venv introuvable dans $Repository (.venv ou venv)."
+}
+
+function Write-RecoveryLog([string]$Message) {
+    try {
+        New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
+        $line = "{0} {1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Message
+        Add-Content -Path $FallbackLog -Value $line -Encoding UTF8
+    } catch { }
+}
+
+function Start-TuiFallback([string]$Reason) {
+    if (!$FallbackToTui) { return }
+    if (!(Test-Path $TuiLauncher)) {
+        Write-Host "ATTENTION: fallback TUI demande mais launcher introuvable: $TuiLauncher" -ForegroundColor Yellow
+        Write-RecoveryLog "fallback-tui-missing reason=$Reason launcher=$TuiLauncher"
+        return
+    }
+
+    Write-Host "ATTENTION: update Galadriel interrompu; ouverture du TUI de secours." -ForegroundColor Yellow
+    Write-Host "          Raison: $Reason" -ForegroundColor Yellow
+    if ($RecoveryBundle) {
+        Write-Host "          Bundle recovery: $RecoveryBundle" -ForegroundColor DarkYellow
+    }
+    Write-RecoveryLog "fallback-tui reason=$Reason recovery=$RecoveryBundle"
+
+    $command = "& '$TuiLauncher' --continue"
+    Start-Process -FilePath 'powershell.exe' -ArgumentList @(
+        '-NoExit',
+        '-NoProfile',
+        '-ExecutionPolicy', 'Bypass',
+        '-Command', $command
+    ) -WorkingDirectory $HermesCore | Out-Null
+}
+
+function Start-DesktopRelaunch {
+    if (!$RelaunchDesktop) { return }
+    if (!(Test-Path $DesktopLauncher)) {
+        Write-Host "ATTENTION: relance Desktop demandee mais launcher introuvable: $DesktopLauncher" -ForegroundColor Yellow
+        Write-RecoveryLog "desktop-relaunch-missing launcher=$DesktopLauncher"
+        return
+    }
+
+    Write-Host ''
+    Write-Host "Relance du corps Desktop Galadriel..." -ForegroundColor Cyan
+    Write-RecoveryLog "desktop-relaunch launcher=$DesktopLauncher"
+    Start-Process -FilePath $DesktopLauncher -WorkingDirectory $ProjectRoot | Out-Null
+}
+
+function Save-RecoveryBundle {
+    New-Item -ItemType Directory -Force -Path $BackupDir | Out-Null
+    $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+    $bundle = Join-Path $BackupDir "galadriel-update-$stamp"
+    New-Item -ItemType Directory -Force -Path $bundle | Out-Null
+
+    try { (& git rev-parse HEAD 2>&1) | Set-Content -Path (Join-Path $bundle 'HEAD.txt') -Encoding UTF8 } catch { }
+    try { (& git status --short --branch 2>&1) | Set-Content -Path (Join-Path $bundle 'status-before.txt') -Encoding UTF8 } catch { }
+    try { (& git remote -v 2>&1) | Set-Content -Path (Join-Path $bundle 'remotes-before.txt') -Encoding UTF8 } catch { }
+    try { (& git diff --binary --submodule=diff 2>&1) | Set-Content -Path (Join-Path $bundle 'worktree-before.patch') -Encoding UTF8 } catch { }
+    try { (& git diff --cached --binary --submodule=diff 2>&1) | Set-Content -Path (Join-Path $bundle 'index-before.patch') -Encoding UTF8 } catch { }
+    try { (& git stash list -n 10 2>&1) | Set-Content -Path (Join-Path $bundle 'stash-list-before.txt') -Encoding UTF8 } catch { }
+
+    $script:RecoveryBundle = $bundle
+    Write-Host "Recovery bundle: $bundle" -ForegroundColor DarkGray
+    return $bundle
+}
+
+trap {
+    $reason = $_.Exception.Message
+    Write-Host ''
+    Write-Host "ERREUR update Galadriel: $reason" -ForegroundColor Red
+    if ($RecoveryBundle) {
+        Write-Host "Recovery bundle: $RecoveryBundle" -ForegroundColor Yellow
+    }
+    Start-TuiFallback -Reason $reason
+    exit 1
 }
 
 Set-Location $Repository
@@ -96,6 +184,8 @@ $unmerged = Get-GitOutput diff --name-only --diff-filter=U
 if ($unmerged) {
     throw "Merge Git deja en conflit. Resolvez d'abord:`n$unmerged"
 }
+
+Save-RecoveryBundle | Out-Null
 
 $stashMade = $false
 $stashRef = $null
@@ -205,3 +295,4 @@ if ($mergedUpstream) {
 } else {
     Write-Host 'Galadriel update complete: aucun merge upstream necessaire.' -ForegroundColor Green
 }
+Start-DesktopRelaunch

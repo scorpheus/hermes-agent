@@ -108,6 +108,10 @@ dependencies = [
   "uvicorn[standard]>=0.24.0,<1",
   "ptyprocess>=0.7.0,<1; sys_platform != 'win32'",
   "pywinpty>=2.0.0,<3; sys_platform == 'win32'",
+  # Windows cannot rotate a stdlib ``RotatingFileHandler`` log while another
+  # process holds ``agent.log`` open. ``hermes_logging.py`` aliases this package
+  # only on Windows so concurrent TUI/gateway/cron processes can rotate safely.
+  "concurrent-log-handler==0.9.29; sys_platform == 'win32'",
   # Image resize recovery for the vision tools. Pillow shrinks oversized images
   # (>5 MB or >8000px) at embed time; without it the byte AND pixel-dimension
   # shrink paths no-op, so an oversized image bakes into immutable history and
