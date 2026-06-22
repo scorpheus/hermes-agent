@@ -1,5 +1,5 @@
 """Tests for hermes_logging — centralized logging setup."""
-
+import io
 import logging
 import os
 import stat
@@ -12,8 +12,11 @@ import pytest
 
 import hermes_logging
 # Use whatever RotatingFileHandler class hermes_logging actually resolved so
-# the tests match the Windows concurrent-log-handler alias and the POSIX stdlib
-# handler without hard-coding either implementation.
+# the autouse fixture's isinstance checks (which strip rotating handlers
+# between tests) match the real handlers on every platform. hermes_logging
+# aliases concurrent-log-handler's ConcurrentRotatingFileHandler on Windows
+# (the #44873 fix) but keeps stdlib RotatingFileHandler on POSIX, so importing
+# the name from the module under test keeps the two in lockstep.
 from hermes_logging import RotatingFileHandler
 
 
@@ -308,7 +311,7 @@ class TestGatewayMode:
         """gateway.log captures records from gateway.* loggers."""
         hermes_logging.setup_logging(hermes_home=hermes_home, mode="gateway")
 
-        gw_logger = logging.getLogger("gateway.platforms.telegram")
+        gw_logger = logging.getLogger("plugins.platforms.telegram.adapter")
         gw_logger.info("telegram connected")
 
         for h in logging.getLogger().handlers:
@@ -555,9 +558,14 @@ class TestComponentFilter:
         assert f.filter(record) is True
 
     def test_passes_nested_matching_prefix(self):
-        f = hermes_logging._ComponentFilter(("gateway",))
+        # Migrated platform adapters log under plugins.platforms.* (#41112);
+        # the gateway component filter is built from COMPONENT_PREFIXES["gateway"]
+        # (which includes "plugins.platforms"), so such records pass.
+        f = hermes_logging._ComponentFilter(
+            hermes_logging.COMPONENT_PREFIXES["gateway"]
+        )
         record = logging.LogRecord(
-            "gateway.platforms.telegram", logging.INFO, "", 0, "msg", (), None
+            "plugins.platforms.telegram.adapter", logging.INFO, "", 0, "msg", (), None
         )
         assert f.filter(record) is True
 
@@ -589,10 +597,16 @@ class TestComponentPrefixes:
 
     def test_gateway_prefix(self):
         assert "gateway" in hermes_logging.COMPONENT_PREFIXES
-        # The gateway component captures both core gateway logs and the
-        # hermes_plugins facility (plugin-installed gateway adapters log
-        # under that prefix).
-        assert ("gateway", "hermes_plugins") == hermes_logging.COMPONENT_PREFIXES["gateway"]
+        # The gateway component captures core gateway logs, the hermes_plugins
+        # facility, and plugins.platforms (messaging-platform adapters that
+        # migrated out of gateway/platforms/ into bundled plugins, #41112).
+        # Assert the required members as an invariant rather than an exact
+        # tuple snapshot so adding future gateway-component prefixes doesn't
+        # break this test.
+        gateway_prefixes = hermes_logging.COMPONENT_PREFIXES["gateway"]
+        assert "gateway" in gateway_prefixes
+        assert "hermes_plugins" in gateway_prefixes
+        assert "plugins.platforms" in gateway_prefixes
 
     def test_agent_prefix(self):
         prefixes = hermes_logging.COMPONENT_PREFIXES["agent"]
@@ -750,7 +764,7 @@ class TestAddRotatingHandler:
                 logger.removeHandler(h)
                 h.close()
 
-    @pytest.mark.skipif(sys.platform == "win32", reason="managed POSIX file modes are not enforced on Windows")
+    @pytest.mark.skipif(sys.platform.startswith("win"), reason="POSIX mode bits are not enforced on Windows")
     def test_managed_mode_initial_open_sets_group_writable(self, tmp_path):
         log_path = tmp_path / "managed-open.log"
         logger = logging.getLogger("_test_rotating_managed_open")
@@ -775,7 +789,7 @@ class TestAddRotatingHandler:
                 logger.removeHandler(h)
                 h.close()
 
-    @pytest.mark.skipif(sys.platform == "win32", reason="managed POSIX file modes are not enforced on Windows")
+    @pytest.mark.skipif(sys.platform.startswith("win"), reason="POSIX mode bits are not enforced on Windows")
     def test_managed_mode_rollover_sets_group_writable(self, tmp_path):
         log_path = tmp_path / "managed-rollover.log"
         logger = logging.getLogger("_test_rotating_managed_rollover")
