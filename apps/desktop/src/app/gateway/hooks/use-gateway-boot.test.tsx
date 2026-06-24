@@ -2,6 +2,7 @@ import { act, cleanup, render } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { $desktopBoot } from '@/store/boot'
+import { $notifications, clearNotifications } from '@/store/notifications'
 import { $gatewayState } from '@/store/session'
 
 import { useGatewayBoot } from './use-gateway-boot'
@@ -73,6 +74,7 @@ class FakeWebSocket {
 }
 
 function fakeDesktop() {
+  let backendExitCallback: ((payload?: unknown) => void) | null = null
   const conn = {
     authMode: 'token' as const,
     baseUrl: 'https://vps.example.com',
@@ -94,11 +96,22 @@ function fakeDesktop() {
       timestamp: Date.now()
     })),
     onBootProgress: vi.fn(() => () => undefined),
-    onBackendExit: vi.fn(() => () => undefined),
+    onBackendExit: vi.fn((callback: (payload?: unknown) => void) => {
+      backendExitCallback = callback
+
+      return () => {
+        if (backendExitCallback === callback) {
+          backendExitCallback = null
+        }
+      }
+    }),
     onPowerResume: vi.fn(() => () => undefined),
     onWindowStateChanged: vi.fn(() => () => undefined),
     touchBackend: vi.fn(async () => undefined),
-    profile: { get: vi.fn(async () => ({ profile: 'default' })) }
+    profile: { get: vi.fn(async () => ({ profile: 'default' })) },
+    emitBackendExit(payload: unknown = { code: 3221225477 }) {
+      backendExitCallback?.(payload)
+    }
   }
 }
 
@@ -137,6 +150,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup()
+  clearNotifications()
   vi.useRealTimers()
   ;(globalThis as { WebSocket: unknown }).WebSocket = originalWebSocket
   delete (window as { hermesDesktop?: unknown }).hermesDesktop
@@ -261,5 +275,32 @@ describe('useGatewayBoot remote reconnect loop (real hook, fake socket)', () => 
 
     expect($gatewayState.get()).toBe('open')
     expect($desktopBoot.get().error).toBeNull()
+  })
+
+  it('FIX: a desktop-spawned backend exit reconnects automatically instead of waiting for manual retry', async () => {
+    const desktop = fakeDesktop()
+    ;(window as { hermesDesktop?: unknown }).hermesDesktop = desktop
+
+    render(<Harness />)
+    await flushAsync()
+
+    expect($gatewayState.get()).toBe('open')
+    expect(FakeWebSocket.instances).toHaveLength(1)
+    expect($desktopBoot.get().error).toBeNull()
+
+    act(() => desktop.emitBackendExit())
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1)
+    })
+    await flushAsync()
+
+    expect(desktop.getConnection.mock.calls.length).toBeGreaterThanOrEqual(2)
+    expect(FakeWebSocket.instances.length).toBeGreaterThan(1)
+    expect($gatewayState.get()).toBe('open')
+    expect($desktopBoot.get().error).toBeNull()
+    expect($notifications.get()[0]).toMatchObject({
+      id: 'desktop-backend-recovering',
+      kind: 'warning'
+    })
   })
 })

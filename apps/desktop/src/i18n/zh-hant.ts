@@ -53,9 +53,9 @@ export const zhHant = defineLocale({
       startingHermesDesktop: '正在啟動 Hermes Desktop…'
     },
     errors: {
-      backgroundExited: 'Hermes 背景程序已結束。',
+      backgroundExited: 'Hermes 後端已停止；正在重新連線到你的工作階段…',
       backgroundExitedDuringStartup: 'Hermes 背景程序在啟動期間結束。',
-      backendStopped: '後端已停止',
+      backendStopped: '正在復原後端',
       desktopBootFailed: '桌面啟動失敗',
       gatewaySignInRequired: '需要閘道登入',
       ipcBridgeUnavailable: '桌面 IPC 橋接器不可用。'

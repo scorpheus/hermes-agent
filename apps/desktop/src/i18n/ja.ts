@@ -53,9 +53,9 @@ export const ja = defineLocale({
       startingHermesDesktop: 'Hermes Desktop を起動中…'
     },
     errors: {
-      backgroundExited: 'Hermes バックグラウンドプロセスが終了しました。',
+      backgroundExited: 'Hermes バックエンドが停止しました。セッションへ再接続しています…',
       backgroundExitedDuringStartup: '起動中に Hermes バックグラウンドプロセスが終了しました。',
-      backendStopped: 'バックエンドが停止しました',
+      backendStopped: 'バックエンドを復旧中',
       desktopBootFailed: 'デスクトップの起動に失敗しました',
       gatewaySignInRequired: 'ゲートウェイへのサインインが必要です',
       ipcBridgeUnavailable: 'デスクトップ IPC ブリッジが利用できません。'

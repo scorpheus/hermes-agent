@@ -53,9 +53,9 @@ export const zh: Translations = {
       startingHermesDesktop: '正在启动 Hermes 桌面版…'
     },
     errors: {
-      backgroundExited: 'Hermes 后台进程已退出。',
+      backgroundExited: 'Hermes 后端已停止；正在重新连接到你的会话…',
       backgroundExitedDuringStartup: 'Hermes 后台进程在启动期间退出。',
-      backendStopped: '后端已停止',
+      backendStopped: '正在恢复后端',
       desktopBootFailed: '桌面启动失败',
       gatewaySignInRequired: '需要登录网关',
       ipcBridgeUnavailable: '桌面 IPC 桥不可用。'

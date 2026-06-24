@@ -53,9 +53,9 @@ export const en: Translations = {
       startingHermesDesktop: 'Starting Hermes Desktop…'
     },
     errors: {
-      backgroundExited: 'Hermes background process exited.',
+      backgroundExited: 'Hermes backend stopped; reconnecting to your session…',
       backgroundExitedDuringStartup: 'Hermes background process exited during startup.',
-      backendStopped: 'Backend stopped',
+      backendStopped: 'Recovering backend',
       desktopBootFailed: 'Desktop boot failed',
       gatewaySignInRequired: 'Gateway sign-in required',
       ipcBridgeUnavailable: 'Desktop IPC bridge is unavailable.'

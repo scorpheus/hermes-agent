@@ -118,8 +118,8 @@ export function useGatewayBoot({
       }
     }
 
-    const attemptReconnect = async () => {
-      if (cancelled || reconnecting || gatewayOpen()) {
+    const attemptReconnect = async ({ force = false }: { force?: boolean } = {}) => {
+      if (cancelled || reconnecting || (!force && gatewayOpen())) {
         return
       }
 
@@ -168,22 +168,25 @@ export function useGatewayBoot({
       }
     }
 
-    function scheduleReconnect() {
-      if (cancelled || reconnecting || reconnectTimer !== null || gatewayOpen()) {
+    function scheduleReconnect({ immediate = false, force = false }: { immediate?: boolean; force?: boolean } = {}) {
+      if (cancelled || reconnecting || reconnectTimer !== null || (!force && gatewayOpen())) {
         return
       }
 
       // 1s, 2s, 4s … capped at 15s.
-      const delay = Math.min(15_000, 1_000 * 2 ** Math.min(reconnectAttempt, 4))
-      reconnectAttempt += 1
+      const delay = immediate ? 0 : Math.min(15_000, 1_000 * 2 ** Math.min(reconnectAttempt, 4))
 
-      if (bootCompleted && reconnectAttempt >= 6 && !$desktopBoot.get().error) {
+      if (!immediate) {
+        reconnectAttempt += 1
+      }
+
+      if (!immediate && bootCompleted && reconnectAttempt >= 6 && !$desktopBoot.get().error) {
         failDesktopBoot('Hermes gateway connection was lost and reconnect is still failing. Retry or restart the local backend from this recovery panel.')
       }
 
       reconnectTimer = setTimeout(() => {
         reconnectTimer = null
-        void attemptReconnect()
+        void attemptReconnect({ force })
       }, delay)
     }
 
@@ -354,20 +357,47 @@ export function useGatewayBoot({
     })
 
     const offExit = desktop.onBackendExit(() => {
+      const message = translateNow('boot.errors.backgroundExited')
+
       callbacksRef.current.handleGatewayEvent({
         type: 'gateway.disconnected',
-        payload: { message: translateNow('boot.errors.backgroundExited') }
+        payload: { message }
       })
 
-      if ($desktopBoot.get().running || $desktopBoot.get().visible) {
+      if (!bootCompleted) {
         failDesktopBoot(translateNow('boot.errors.backgroundExitedDuringStartup'))
+
+        notify({
+          kind: 'error',
+          title: translateNow('boot.errors.backendStopped'),
+          message,
+          durationMs: 0
+        })
+
+        return
       }
 
+      // The Electron main process has already nulled its cached backend and the
+      // next getConnection() call will spawn a fresh one. Close any stale renderer
+      // socket now, then force an immediate reconnect so a backend crash heals
+      // like sleep/wake instead of leaving the app on a raw "process exited"
+      // toast until the user manually retries.
+      try {
+        gateway.close()
+      } catch {
+        // Best-effort: a dead socket is already unusable.
+      }
+
+      clearReconnectTimer()
+      reconnectAttempt = 0
+      scheduleReconnect({ immediate: true, force: true })
+
       notify({
-        kind: 'error',
+        id: 'desktop-backend-recovering',
+        kind: 'warning',
         title: translateNow('boot.errors.backendStopped'),
-        message: translateNow('boot.errors.backgroundExited'),
-        durationMs: 0
+        message,
+        durationMs: 8_000
       })
     })
 
