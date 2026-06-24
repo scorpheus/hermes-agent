@@ -712,6 +712,59 @@ export function useMessageStream({
     [updateSessionState]
   )
 
+  const recoverAssistantAfterDisconnect = useCallback(
+    (sessionId: string) => {
+      let storedSessionId: null | string = null
+
+      updateSessionState(sessionId, state => {
+        storedSessionId = state.storedSessionId
+        const streamId = state.streamId
+        const groupId = state.pendingBranchGroup ?? undefined
+
+        const nextMessages = streamId
+          ? state.messages.flatMap(message => {
+              if (message.id !== streamId) {
+                return [message]
+              }
+
+              const hasVisibleContent =
+                chatMessageText(message).trim() || message.parts.some(part => part.type !== 'text')
+
+              if (!hasVisibleContent) {
+                return []
+              }
+
+              return [
+                {
+                  ...message,
+                  branchGroupId: message.branchGroupId ?? groupId,
+                  pending: false
+                }
+              ]
+            })
+          : state.messages
+
+        return {
+          ...state,
+          messages: nextMessages,
+          streamId: null,
+          pendingBranchGroup: null,
+          awaitingResponse: false,
+          busy: false,
+          needsInput: false,
+          turnStartedAt: null
+        }
+      })
+
+      void refreshSessions().catch(() => undefined)
+
+      if (storedSessionId) {
+        void hydrateFromStoredSession(3, storedSessionId, sessionId)
+      }
+    },
+    [hydrateFromStoredSession, refreshSessions, updateSessionState]
+  )
+
   const handleGatewayEvent = useCallback(
     (event: RpcEvent) => {
       const payload = event.payload as GatewayEventPayload | undefined
@@ -1140,8 +1193,6 @@ export function useMessageStream({
           }))
         }
       } else if (event.type === 'gateway.disconnected') {
-        const errorMessage = coerceGatewayText(payload?.message) || 'Hermes gateway connection lost'
-
         if (sessionId) {
           const state = sessionStateByRuntimeIdRef.current.get(sessionId)
 
@@ -1150,7 +1201,7 @@ export function useMessageStream({
             setSessionCompacting(sessionId, false)
             compactedTurnRef.current.delete(sessionId)
             flushQueuedDeltas(sessionId)
-            failAssistantMessage(sessionId, errorMessage)
+            recoverAssistantAfterDisconnect(sessionId)
 
             if (isActiveEvent) {
               setTurnStartedAt(null)
@@ -1215,6 +1266,7 @@ export function useMessageStream({
       failAssistantMessage,
       flushQueuedDeltas,
       queryClient,
+      recoverAssistantAfterDisconnect,
       refreshHermesConfig,
       sessionInterrupted,
       sessionStateByRuntimeIdRef,

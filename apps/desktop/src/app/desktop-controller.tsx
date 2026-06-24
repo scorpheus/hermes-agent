@@ -44,6 +44,7 @@ import { respondToApprovalAction } from '../store/native-notifications'
 import { setPetActivity } from '../store/pet'
 import { setPetOverlayOpenAppHandler, setPetOverlaySubmitHandler } from '../store/pet-overlay'
 import { $filePreviewTarget, $previewTarget, closeActiveRightRailTab } from '../store/preview'
+import { refreshBackgroundProcesses } from '../store/composer-status'
 import {
   $activeGatewayProfile,
   $freshSessionRequest,
@@ -643,6 +644,24 @@ export function DesktopController() {
     [activeSessionIdRef, selectedStoredSessionIdRef, updateSessionState]
   )
 
+  const reconcileRuntimeStateAfterReconnect = useCallback(async () => {
+    const entries = Array.from(sessionStateByRuntimeIdRef.current.entries())
+    const activeRuntimeId = activeSessionIdRef.current
+
+    if (activeRuntimeId && !entries.some(([runtimeSessionId]) => runtimeSessionId === activeRuntimeId)) {
+      entries.unshift([activeRuntimeId, ensureSessionState(activeRuntimeId, selectedStoredSessionIdRef.current)])
+    }
+
+    await Promise.allSettled(
+      entries.map(async ([runtimeSessionId, state]) => {
+        await Promise.allSettled([
+          refreshBackgroundProcesses(runtimeSessionId),
+          state.storedSessionId ? hydrateFromStoredSession(3, state.storedSessionId, runtimeSessionId) : Promise.resolve()
+        ])
+      })
+    )
+  }, [activeSessionIdRef, ensureSessionState, hydrateFromStoredSession, selectedStoredSessionIdRef, sessionStateByRuntimeIdRef])
+
   const { handleGatewayEvent } = useMessageStream({
     activeSessionIdRef,
     hydrateFromStoredSession,
@@ -899,6 +918,7 @@ export function DesktopController() {
     onGatewayReady: g => {
       gatewayRef.current = g
     },
+    reconcileRuntimeState: reconcileRuntimeStateAfterReconnect,
     refreshHermesConfig,
     refreshSessions
   })

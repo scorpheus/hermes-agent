@@ -115,11 +115,16 @@ function fakeDesktop() {
   }
 }
 
-function Harness() {
+interface HarnessProps {
+  reconcileRuntimeState?: () => Promise<void>
+}
+
+function Harness({ reconcileRuntimeState = async () => undefined }: HarnessProps = {}) {
   useGatewayBoot({
     handleGatewayEvent: () => undefined,
     onConnectionReady: () => undefined,
     onGatewayReady: () => undefined,
+    reconcileRuntimeState,
     refreshHermesConfig: async () => undefined,
     refreshSessions: async () => undefined
   })
@@ -279,9 +284,10 @@ describe('useGatewayBoot remote reconnect loop (real hook, fake socket)', () => 
 
   it('FIX: a desktop-spawned backend exit reconnects automatically instead of waiting for manual retry', async () => {
     const desktop = fakeDesktop()
+    const reconcileRuntimeState = vi.fn(async () => undefined)
     ;(window as { hermesDesktop?: unknown }).hermesDesktop = desktop
 
-    render(<Harness />)
+    render(<Harness reconcileRuntimeState={reconcileRuntimeState} />)
     await flushAsync()
 
     expect($gatewayState.get()).toBe('open')
@@ -296,6 +302,7 @@ describe('useGatewayBoot remote reconnect loop (real hook, fake socket)', () => 
 
     expect(desktop.getConnection.mock.calls.length).toBeGreaterThanOrEqual(2)
     expect(FakeWebSocket.instances.length).toBeGreaterThan(1)
+    expect(reconcileRuntimeState).toHaveBeenCalledTimes(1)
     expect($gatewayState.get()).toBe('open')
     expect($desktopBoot.get().error).toBeNull()
     expect($notifications.get()[0]).toMatchObject({

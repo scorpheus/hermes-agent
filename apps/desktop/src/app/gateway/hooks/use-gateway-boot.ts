@@ -46,6 +46,7 @@ interface GatewayBootOptions {
     connection: Awaited<ReturnType<NonNullable<typeof window.hermesDesktop>['getConnection']>> | null
   ) => void
   onGatewayReady: (gateway: HermesGateway | null) => void
+  reconcileRuntimeState?: () => Promise<void>
   refreshHermesConfig: () => Promise<void>
   refreshSessions: () => Promise<void>
 }
@@ -54,6 +55,7 @@ export function useGatewayBoot({
   handleGatewayEvent,
   onConnectionReady,
   onGatewayReady,
+  reconcileRuntimeState,
   refreshHermesConfig,
   refreshSessions
 }: GatewayBootOptions) {
@@ -61,6 +63,7 @@ export function useGatewayBoot({
     handleGatewayEvent,
     onConnectionReady,
     onGatewayReady,
+    reconcileRuntimeState,
     refreshHermesConfig,
     refreshSessions
   })
@@ -69,6 +72,7 @@ export function useGatewayBoot({
     handleGatewayEvent,
     onConnectionReady,
     onGatewayReady,
+    reconcileRuntimeState,
     refreshHermesConfig,
     refreshSessions
   }
@@ -150,6 +154,7 @@ export function useGatewayBoot({
         // Resync state that may have moved on the backend while we were asleep.
         await callbacksRef.current.refreshHermesConfig().catch(() => undefined)
         await callbacksRef.current.refreshSessions().catch(() => undefined)
+        await callbacksRef.current.reconcileRuntimeState?.().catch(() => undefined)
       } catch (err) {
         // OAuth session expired mid-reconnect: surface the actionable "sign in
         // again" message once instead of silently looping the backoff against a
