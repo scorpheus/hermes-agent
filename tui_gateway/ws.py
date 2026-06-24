@@ -129,6 +129,8 @@ class WSTransport:
         return not self._closed
 
     async def _safe_send(self, line: str) -> None:
+        if self._closed:
+            return
         try:
             await self._ws.send_text(line)
         except Exception as exc:

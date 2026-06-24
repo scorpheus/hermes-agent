@@ -176,6 +176,11 @@ export function useGatewayBoot({
       // 1s, 2s, 4s … capped at 15s.
       const delay = Math.min(15_000, 1_000 * 2 ** Math.min(reconnectAttempt, 4))
       reconnectAttempt += 1
+
+      if (bootCompleted && reconnectAttempt >= 6 && !$desktopBoot.get().error) {
+        failDesktopBoot('Hermes gateway connection was lost and reconnect is still failing. Retry or restart the local backend from this recovery panel.')
+      }
+
       reconnectTimer = setTimeout(() => {
         reconnectTimer = null
         void attemptReconnect()
@@ -228,15 +233,18 @@ export function useGatewayBoot({
           // and short-lived; local/token URLs are cheap to refresh and safe to reuse.
           const wsUrl = await resolveGatewayWsUrl(desktop, conn)
           await gateway.connect(wsUrl)
+
           return
         } catch (error) {
           lastError = error
+
           if (isGatewayReauthRequired(error)) {
             throw error
           }
 
           const elapsed = Date.now() - startedAt
           const remaining = timeoutMs - elapsed
+
           if (remaining <= 0) {
             break
           }
@@ -259,6 +267,7 @@ export function useGatewayBoot({
       if (lastError instanceof Error) {
         throw lastError
       }
+
       throw new Error('Could not connect to Hermes gateway')
     }
 
@@ -283,6 +292,10 @@ export function useGatewayBoot({
       } else if (bootCompleted && (st === 'closed' || st === 'error')) {
         // The socket dropped after a healthy boot (typically sleep/wake). Try
         // to bring it back instead of leaving the composer stuck disabled.
+        callbacksRef.current.handleGatewayEvent({
+          type: 'gateway.disconnected',
+          payload: { message: translateNow('boot.errors.backgroundExited') }
+        })
         scheduleReconnect()
       }
     })
@@ -341,6 +354,11 @@ export function useGatewayBoot({
     })
 
     const offExit = desktop.onBackendExit(() => {
+      callbacksRef.current.handleGatewayEvent({
+        type: 'gateway.disconnected',
+        payload: { message: translateNow('boot.errors.backgroundExited') }
+      })
+
       if ($desktopBoot.get().running || $desktopBoot.get().visible) {
         failDesktopBoot(translateNow('boot.errors.backgroundExitedDuringStartup'))
       }
@@ -393,10 +411,12 @@ export function useGatewayBoot({
         })
         await ensureDefaultWorkspaceCwd()
         const remoteDefault = await desktopDefaultCwd().catch(() => null)
+
         if (remoteDefault?.cwd && !$activeSessionId.get() && !$currentCwd.get()) {
           setCurrentCwd(remoteDefault.cwd)
           setCurrentBranch(remoteDefault.branch || '')
         }
+
         await callbacksRef.current.refreshHermesConfig()
 
         if (cancelled) {

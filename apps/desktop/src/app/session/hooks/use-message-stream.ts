@@ -1107,6 +1107,24 @@ export function useMessageStream({
             ]
           }))
         }
+      } else if (event.type === 'gateway.disconnected') {
+        const errorMessage = coerceGatewayText(payload?.message) || 'Hermes gateway connection lost'
+
+        if (sessionId) {
+          const state = sessionStateByRuntimeIdRef.current.get(sessionId)
+
+          if (state?.busy || state?.awaitingResponse || state?.streamId) {
+            clearAllPrompts(sessionId)
+            setSessionCompacting(sessionId, false)
+            compactedTurnRef.current.delete(sessionId)
+            flushQueuedDeltas(sessionId)
+            failAssistantMessage(sessionId, errorMessage)
+
+            if (isActiveEvent) {
+              setTurnStartedAt(null)
+            }
+          }
+        }
       } else if (event.type === 'error') {
         const errorMessage = payload?.message || 'Hermes reported an error'
         const looksLikeProviderSetup = isProviderSetupErrorMessage(errorMessage)
@@ -1162,6 +1180,7 @@ export function useMessageStream({
       queryClient,
       refreshHermesConfig,
       sessionInterrupted,
+      sessionStateByRuntimeIdRef,
       updateSessionState,
       upsertToolCall
     ]

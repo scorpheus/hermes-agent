@@ -2,7 +2,7 @@ import { useStore } from '@nanostores/react'
 import { type MutableRefObject, useCallback, useEffect, useRef } from 'react'
 
 import type { ChatMessage } from '@/lib/chat-messages'
-import { preserveLocalAssistantErrors } from '@/lib/chat-messages'
+import { preserveLocalAssistantErrors, textPart } from '@/lib/chat-messages'
 import { createClientSessionState } from '@/lib/chat-runtime'
 import { setMutableRef } from '@/lib/mutable-ref'
 import {
@@ -64,6 +64,51 @@ function syncRuntimeMetadataToView(state: ClientSessionState) {
   setCurrentPersonality(state.personality ?? '')
 }
 
+export const STALE_BUSY_UNLOCK_TIMEOUT_MS = 8 * 60 * 1000
+
+const STALE_BUSY_UNLOCK_MESSAGE =
+  'Connection to the backend was lost or silent for more than 8 minutes. I unlocked the composer; the previous turn may still finish in history after reconnect.'
+
+function settleStaleBusyState(state: ClientSessionState): ClientSessionState {
+  const streamId = state.streamId ?? `assistant-stale-${Date.now()}`
+  const groupId = state.pendingBranchGroup ?? undefined
+  const error = STALE_BUSY_UNLOCK_MESSAGE
+
+  const nextMessages = state.messages.some(m => m.id === streamId)
+    ? state.messages.map(message =>
+        message.id === streamId
+          ? {
+              ...message,
+              error,
+              pending: false
+            }
+          : message
+      )
+    : [
+        ...state.messages,
+        {
+          id: streamId,
+          role: 'assistant' as const,
+          parts: [textPart('')],
+          error,
+          pending: false,
+          branchGroupId: groupId
+        }
+      ]
+
+  return {
+    ...state,
+    messages: nextMessages,
+    awaitingResponse: false,
+    busy: false,
+    needsInput: false,
+    pendingBranchGroup: null,
+    sawAssistantPayload: true,
+    streamId: null,
+    turnStartedAt: null
+  }
+}
+
 export function useSessionStateCache({
   activeSessionId,
   busyRef,
@@ -79,6 +124,7 @@ export function useSessionStateCache({
   const runtimeIdByStoredSessionIdRef = useRef(new Map<string, string>())
   const pendingViewStateRef = useRef<{ sessionId: string; state: ClientSessionState } | null>(null)
   const viewSyncRafRef = useRef<number | null>(null)
+  const staleBusyTimersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>())
   // Runtime id whose transcript currently occupies `$messages` — lets the
   // flush below tell a same-session refresh from a thread switch.
   const viewSessionIdRef = useRef<string | null>(null)
@@ -145,6 +191,7 @@ export function useSessionStateCache({
     // jerks the scroll position while the user is reading. Skip the publish when
     // the merged result is content-identical to what's already on screen.
     const currentMessages = $messages.get()
+
     // On a thread switch `$messages` still holds the *previous* thread, so
     // preserving its local errors would graft that thread's failed turn (e.g.
     // an out-of-funds error) onto this one — then cascade it everywhere as the
@@ -230,12 +277,52 @@ export function useSessionStateCache({
     [flushPendingViewState]
   )
 
+  const clearRuntimeBusyWatchdog = useCallback((sessionId: string) => {
+    const timer = staleBusyTimersRef.current.get(sessionId)
+
+    if (timer) {
+      clearTimeout(timer)
+      staleBusyTimersRef.current.delete(sessionId)
+    }
+  }, [])
+
+  const armRuntimeBusyWatchdog = useCallback(
+    (sessionId: string) => {
+      clearRuntimeBusyWatchdog(sessionId)
+
+      const timer = setTimeout(() => {
+        staleBusyTimersRef.current.delete(sessionId)
+
+        const current = sessionStateByRuntimeIdRef.current.get(sessionId)
+
+        if (!current?.busy || current.needsInput) {
+          return
+        }
+
+        const next = settleStaleBusyState(current)
+        sessionStateByRuntimeIdRef.current.set(sessionId, next)
+        setSessionWorking(current.storedSessionId, false)
+        setSessionAttention(current.storedSessionId, false)
+        syncSessionStateToView(sessionId, next)
+      }, STALE_BUSY_UNLOCK_TIMEOUT_MS)
+
+      staleBusyTimersRef.current.set(sessionId, timer)
+    },
+    [clearRuntimeBusyWatchdog, syncSessionStateToView]
+  )
+
   useEffect(
     () => () => {
       if (viewSyncRafRef.current !== null && typeof window !== 'undefined') {
         window.cancelAnimationFrame(viewSyncRafRef.current)
         viewSyncRafRef.current = null
       }
+
+      for (const timer of staleBusyTimersRef.current.values()) {
+        clearTimeout(timer)
+      }
+
+      staleBusyTimersRef.current.clear()
     },
     []
   )
@@ -264,16 +351,21 @@ export function useSessionStateCache({
       // Every state update is effectively a "still alive" heartbeat for
       // streaming events. The session-store watchdog uses this to keep the
       // working flag alive during long-running turns and to clear it once
-      // the stream goes silent.
+      // the stream goes silent. The local runtime watchdog also unlocks the
+      // focused composer if the UI never receives a terminal event after a
+      // backend restart, WS disconnect, or stalled context-compression run.
       if (next.busy) {
+        armRuntimeBusyWatchdog(sessionId)
         noteSessionActivity(next.storedSessionId)
+      } else {
+        clearRuntimeBusyWatchdog(sessionId)
       }
 
       syncSessionStateToView(sessionId, next)
 
       return next
     },
-    [ensureSessionState, syncSessionStateToView]
+    [armRuntimeBusyWatchdog, clearRuntimeBusyWatchdog, ensureSessionState, syncSessionStateToView]
   )
 
   return {

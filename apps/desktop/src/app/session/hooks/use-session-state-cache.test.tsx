@@ -11,6 +11,7 @@ import {
   $currentServiceTier,
   $messages,
   $turnStartedAt,
+  $workingSessionIds,
   setCurrentFastMode,
   setCurrentModel,
   setCurrentProvider,
@@ -19,7 +20,7 @@ import {
   setTurnStartedAt
 } from '@/store/session'
 
-import { useSessionStateCache } from './use-session-state-cache'
+import { STALE_BUSY_UNLOCK_TIMEOUT_MS, useSessionStateCache } from './use-session-state-cache'
 
 type Cache = ReturnType<typeof useSessionStateCache>
 
@@ -31,6 +32,7 @@ interface HarnessProps {
 
 function Harness({ activeSessionId, onReady, selectedStoredSessionId }: HarnessProps) {
   const busyRef: MutableRefObject<boolean> = { current: false }
+
   const cache = useSessionStateCache({
     activeSessionId,
     busyRef,
@@ -143,6 +145,7 @@ describe('useSessionStateCache — per-session turn timer', () => {
 
   it('mirrors the focused session model metadata when switching from a cached session', () => {
     let cache!: Cache
+
     const { rerender } = render(
       <Harness activeSessionId="fg-runtime" onReady={c => (cache = c)} selectedStoredSessionId="fg-stored" />
     )
@@ -191,6 +194,7 @@ describe('useSessionStateCache — per-session turn timer', () => {
     setCurrentFastMode(true)
 
     let cache!: Cache
+
     const { rerender } = render(
       <Harness activeSessionId="fg-runtime" onReady={c => (cache = c)} selectedStoredSessionId="fg-stored" />
     )
@@ -216,6 +220,76 @@ describe('useSessionStateCache — per-session turn timer', () => {
   })
 })
 
+describe('useSessionStateCache — stale busy recovery', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    $messages.set([])
+    $workingSessionIds.set([])
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.useRealTimers()
+    $messages.set([])
+    $workingSessionIds.set([])
+  })
+
+  it('unlocks a focused busy session when no terminal stream event arrives', () => {
+    let cache!: Cache
+    render(<Harness activeSessionId="fg-runtime" onReady={c => (cache = c)} selectedStoredSessionId="fg-stored" />)
+
+    act(() => {
+      cache.updateSessionState(
+        'fg-runtime',
+        state => ({
+          ...state,
+          awaitingResponse: true,
+          busy: true,
+          messages: [userMessage('u1', 'go')],
+          streamId: 'assistant-stream',
+          turnStartedAt: 1_700_000_333_000
+        }),
+        'fg-stored'
+      )
+    })
+
+    expect(cache.sessionStateByRuntimeIdRef.current.get('fg-runtime')?.busy).toBe(true)
+    expect($workingSessionIds.get()).toContain('fg-stored')
+
+    act(() => {
+      vi.advanceTimersByTime(STALE_BUSY_UNLOCK_TIMEOUT_MS)
+    })
+
+    const recovered = cache.sessionStateByRuntimeIdRef.current.get('fg-runtime')
+    expect(recovered?.busy).toBe(false)
+    expect(recovered?.awaitingResponse).toBe(false)
+    expect(recovered?.streamId).toBeNull()
+    expect(recovered?.turnStartedAt).toBeNull()
+    expect(recovered?.messages.at(-1)?.error).toContain('unlocked the composer')
+    expect($workingSessionIds.get()).not.toContain('fg-stored')
+  })
+
+  it('does not unlock sessions that are explicitly waiting on user input', () => {
+    let cache!: Cache
+    render(<Harness activeSessionId="fg-runtime" onReady={c => (cache = c)} selectedStoredSessionId="fg-stored" />)
+
+    act(() => {
+      cache.updateSessionState(
+        'fg-runtime',
+        state => ({ ...state, awaitingResponse: true, busy: true, needsInput: true }),
+        'fg-stored'
+      )
+    })
+
+    act(() => {
+      vi.advanceTimersByTime(STALE_BUSY_UNLOCK_TIMEOUT_MS)
+    })
+
+    expect(cache.sessionStateByRuntimeIdRef.current.get('fg-runtime')?.busy).toBe(true)
+    expect(cache.sessionStateByRuntimeIdRef.current.get('fg-runtime')?.needsInput).toBe(true)
+  })
+})
+
 function userMessage(id: string, text: string): ChatMessage {
   return { id, role: 'user', parts: [{ type: 'text', text }] }
 }
@@ -235,6 +309,7 @@ interface ViewHarnessProps {
 
 function ViewHarness({ activeSessionId, onReady }: ViewHarnessProps) {
   const busyRef: MutableRefObject<boolean> = { current: false }
+
   const cache = useSessionStateCache({
     activeSessionId,
     busyRef,

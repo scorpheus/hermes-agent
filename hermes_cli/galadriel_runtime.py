@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import sqlite3
 import subprocess
 import sys
 import time
@@ -163,6 +164,133 @@ def _data_paths_probe(project_root: Path | None) -> dict[str, Any]:
     }
 
 
+_LOG_HEALTH_PATTERNS = {
+    "backend_exit": re.compile(r"Hermes backend exited|backend exited", re.IGNORECASE),
+    "windows_access_violation": re.compile(r"0xc0000005|3221225477", re.IGNORECASE),
+    "context_compaction": re.compile(r"compacting context|Preflight compression|Compression summary", re.IGNORECASE),
+    "websocket_disconnect": re.compile(r"WebSocketDisconnect|Cannot call .*send.*close message|ws write slow", re.IGNORECASE),
+    "electron_connection_reset": re.compile(r"ECONNRESET|ConnectionResetError|read ECONNRESET", re.IGNORECASE),
+    "renderer_bounds_error": re.compile(r"tapClientLookup: Index .* out of bounds", re.IGNORECASE),
+}
+
+
+def _tail_text(path: Path, max_bytes: int = 200_000) -> str:
+    try:
+        with path.open("rb") as fh:
+            size = path.stat().st_size
+            if size > max_bytes:
+                fh.seek(-max_bytes, os.SEEK_END)
+            return fh.read().decode("utf-8", "replace")
+    except Exception:
+        return ""
+
+
+def _runtime_log_probe(project_root: Path | None) -> dict[str, Any]:
+    """Scan recent local logs for the exact failure class that can strand Desktop busy."""
+    candidates = [
+        get_hermes_home() / "logs" / "desktop.log",
+        get_hermes_home() / "logs" / "gui.log",
+        get_hermes_home() / "logs" / "errors.log",
+    ]
+    if project_root is not None:
+        candidates.extend(
+            [
+                project_root / "data" / "logs" / "hermes-desktop-dev.log",
+                project_root / "data" / "logs" / "hermes-desktop-dev.err.log",
+            ]
+        )
+
+    counts = {name: 0 for name in _LOG_HEALTH_PATTERNS}
+    scanned: list[dict[str, Any]] = []
+    for path in candidates:
+        if not path.exists():
+            continue
+        text = _tail_text(path)
+        file_counts = {name: len(pattern.findall(text)) for name, pattern in _LOG_HEALTH_PATTERNS.items()}
+        for name, count in file_counts.items():
+            counts[name] += count
+        try:
+            mtime = int(path.stat().st_mtime)
+        except Exception:
+            mtime = None
+        scanned.append({"path": str(path), "mtime": mtime, "matches": {k: v for k, v in file_counts.items() if v}})
+
+    hard_failures = counts["backend_exit"] + counts["windows_access_violation"] + counts["electron_connection_reset"]
+    return {
+        "ok": hard_failures == 0,
+        "files_scanned": len(scanned),
+        "matches": {k: v for k, v in counts.items() if v},
+        "files": scanned,
+        "detail": "Scans log tails for backend exits, access violations, WS disconnects, ECONNRESET, and compaction stalls.",
+    }
+
+
+def _vehigraph_runtime_probe() -> dict[str, Any]:
+    """Read-only probe for Scorpheus' Vehigraph runner/build processes when present."""
+    repo = Path.home() / "Documents" / "Projets_Perso" / "Repaire_des_mecanos" / "vehigraph"
+    result: dict[str, Any] = {
+        "ok": True,
+        "repo": str(repo),
+        "repo_exists": repo.exists(),
+        "runner_listener_count": 0,
+        "runner_worker_count": 0,
+        "build_process_count": 0,
+        "psutil": False,
+    }
+    try:
+        import psutil  # type: ignore
+
+        result["psutil"] = True
+        for proc in psutil.process_iter(["name", "cmdline"]):
+            try:
+                name = proc.info.get("name") or ""
+                cmd = " ".join(proc.info.get("cmdline") or [])
+            except Exception:
+                continue
+            haystack = f"{name} {cmd}"
+            lower = haystack.lower()
+            if "vehigraph-runner" in lower or "gha\\vehigraph" in lower or "gha/vehigraph" in lower:
+                if "runner.listener" in lower:
+                    result["runner_listener_count"] += 1
+                if "runner.worker" in lower:
+                    result["runner_worker_count"] += 1
+            if any(token in lower for token in ("vehigraph_tests", "ctest", "cmake --build")) and "vehigraph" in lower:
+                result["build_process_count"] += 1
+    except Exception as exc:
+        result["process_error"] = str(exc)
+    result["runner_busy"] = bool(result["runner_worker_count"] or result["build_process_count"])
+    return result
+
+
+def _kanban_db_probe() -> dict[str, Any]:
+    """Tolerant read-only Kanban DB shape/count probe; never blocks diagnostics."""
+    raw = os.environ.get("HERMES_KANBAN_DB")
+    db_path = Path(raw).expanduser() if raw else Path.home() / ".hermes" / "kanban.db"
+    if not db_path.exists():
+        return {"ok": True, "path": str(db_path), "exists": False}
+
+    try:
+        uri = f"file:{db_path.as_posix()}?mode=ro"
+        conn = sqlite3.connect(uri, uri=True, timeout=1)
+        try:
+            tables = [row[0] for row in conn.execute("select name from sqlite_master where type='table'")]
+            payload: dict[str, Any] = {"ok": True, "path": str(db_path), "exists": True, "tables": tables[:20]}
+            if "tasks" in tables:
+                columns = [row[1] for row in conn.execute("pragma table_info(tasks)")]
+                if "status" in columns:
+                    payload["task_counts"] = dict(conn.execute("select status, count(*) from tasks group by status").fetchall())
+                if "status" in columns and "updated_at" in columns:
+                    cutoff = time.time() - 4 * 60 * 60
+                    payload["stale_running_count"] = conn.execute(
+                        "select count(*) from tasks where status='running' and updated_at < ?", (cutoff,)
+                    ).fetchone()[0]
+            return payload
+        finally:
+            conn.close()
+    except Exception as exc:
+        return {"ok": False, "path": str(db_path), "exists": True, "error": str(exc)}
+
+
 def build_galadriel_diagnostics() -> dict[str, Any]:
     """Return a native diagnostics payload replacing the bridge health panel.
 
@@ -179,6 +307,9 @@ def build_galadriel_diagnostics() -> dict[str, Any]:
         "stt_module": _import_available("tools.transcription_tools", "transcribe_audio"),
         "avatar_assets": _avatar_assets_probe(project_root),
         "data_paths": _data_paths_probe(project_root),
+        "runtime_logs": _runtime_log_probe(project_root),
+        "vehigraph_runtime": _vehigraph_runtime_probe(),
+        "kanban_db": _kanban_db_probe(),
     }
     for name, url in _LOCAL_SERVICE_URLS.items():
         checks[name] = _http_health(url)

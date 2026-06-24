@@ -126,3 +126,34 @@ def test_ws_write_loop_stall_does_not_latch_transport(monkeypatch):
         loop.call_soon_threadsafe(loop.stop)
         thread.join(timeout=2)
         loop.close()
+
+
+def test_ws_write_timeout_drops_inflight_frame_after_transport_close(monkeypatch):
+    """If a loop-stalled write times out and the client disconnects before the
+    loop resumes, the queued frame must be dropped instead of trying to write to
+    a closing Starlette socket ("Cannot call send once a close message has been
+    sent")."""
+    monkeypatch.setattr(ws_mod, "_WS_WRITE_TIMEOUT_S", 0.05)
+    sent = []
+
+    class FakeWS:
+        async def send_text(self, line):
+            sent.append(line)
+
+    loop = asyncio.new_event_loop()
+    thread = threading.Thread(target=loop.run_forever, daemon=True)
+    thread.start()
+    try:
+        transport = ws_mod.WSTransport(FakeWS(), loop, peer="close-before-flush")
+        loop.call_soon_threadsafe(time.sleep, 0.3)
+        assert transport.write({"late": 1}) is True
+        transport.close()
+
+        deadline = time.time() + 2
+        while time.time() < deadline and not sent:
+            time.sleep(0.01)
+        assert sent == []
+    finally:
+        loop.call_soon_threadsafe(loop.stop)
+        thread.join(timeout=2)
+        loop.close()
