@@ -128,6 +128,96 @@ function Save-RecoveryBundle {
     return $bundle
 }
 
+function Write-RecoveryArtifact([string]$Name, [object]$Content) {
+    if (!$RecoveryBundle) { return }
+    try {
+        $target = Join-Path $RecoveryBundle $Name
+        @($Content) | Set-Content -Path $target -Encoding UTF8
+    } catch { }
+}
+
+function Get-TrackedConflictMarkerHits([string]$Root) {
+    $pattern = '^(<<<<<<< |>>>>>>> |\|\|\|\|\|\|\| )'
+    $hits = & git -C $Root grep -n -I -E $pattern -- .
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -eq 1) { return @() }
+    if ($exitCode -ne 0) { throw "git grep conflict markers failed in $Root with exit code $exitCode" }
+    return @($hits)
+}
+
+function Assert-NoTrackedConflictMarkers([string]$Root, [string]$Label) {
+    $hits = @(Get-TrackedConflictMarkerHits -Root $Root)
+    if ($hits.Count -eq 0) { return }
+
+    $safeLabel = ($Label -replace '[^A-Za-z0-9_.-]', '-')
+    Write-RecoveryArtifact -Name "conflict-markers-$safeLabel.txt" -Content $hits
+    $preview = ($hits | Select-Object -First 20) -join "`n"
+    throw "Marqueurs de conflit detectes pendant ${Label}; update stoppee avant relance/build:`n$preview"
+}
+
+function Assert-GitDiffCheck([string]$Root, [string]$Label) {
+    $allOutput = @()
+    $failed = $false
+    foreach ($diffArgs in @(@('diff', '--check'), @('diff', '--cached', '--check'))) {
+        $output = & git -C $Root @diffArgs 2>&1
+        $exitCode = $LASTEXITCODE
+        if ($exitCode -ne 0) {
+            $failed = $true
+            $allOutput += @($output)
+        }
+    }
+    if (!$failed) { return }
+
+    Write-RecoveryArtifact -Name "diff-check-$($Label -replace '[^A-Za-z0-9_.-]', '-').txt" -Content $allOutput
+    $preview = (@($allOutput) | Select-Object -First 20) -join "`n"
+    throw "git diff --check a echoue pendant ${Label}; update stoppee:`n$preview"
+}
+
+function Invoke-UpstreamMergePreflight([string]$UpstreamRef, [string]$StashRef = '') {
+    $preflightRoot = Join-Path $DataDir 'update-preflight'
+    New-Item -ItemType Directory -Force -Path $preflightRoot | Out-Null
+    $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+    $probe = Join-Path $preflightRoot "merge-$stamp"
+
+    Write-Host "Preflight merge dans worktree jetable: $probe" -ForegroundColor DarkGray
+    Invoke-Git worktree add --detach $probe HEAD
+
+    $pushed = $false
+    try {
+        Push-Location $probe
+        $pushed = $true
+
+        & git merge --no-edit $UpstreamRef
+        if ($LASTEXITCODE -ne 0) {
+            $conflicts = @(& git diff --name-only --diff-filter=U)
+            Write-RecoveryArtifact -Name 'preflight-upstream-conflicts.txt' -Content $conflicts
+            $preview = ($conflicts | Select-Object -First 20) -join "`n"
+            throw "Preflight refuse: $UpstreamRef produit des conflits. Le worktree live reste intact:`n$preview"
+        }
+
+        Assert-NoTrackedConflictMarkers -Root $probe -Label "preflight merge $UpstreamRef"
+        Assert-GitDiffCheck -Root $probe -Label "preflight merge $UpstreamRef"
+
+        if ($StashRef) {
+            & git stash apply $StashRef
+            if ($LASTEXITCODE -ne 0) {
+                $conflicts = @(& git diff --name-only --diff-filter=U)
+                Write-RecoveryArtifact -Name 'preflight-stash-conflicts.txt' -Content $conflicts
+                $preview = ($conflicts | Select-Object -First 20) -join "`n"
+                throw "Preflight refuse: les changements locaux sauvegardes entreraient en conflit apres update. Stash conservee: $StashRef`n$preview"
+            }
+
+            Assert-NoTrackedConflictMarkers -Root $probe -Label "preflight stash $StashRef"
+        }
+    } finally {
+        if ($pushed) { Pop-Location }
+        & git -C $Repository worktree remove --force $probe *> $null
+        if ($LASTEXITCODE -ne 0 -and (Test-Path $probe)) {
+            Write-Host "ATTENTION: worktree preflight a nettoyer manuellement: $probe" -ForegroundColor Yellow
+        }
+    }
+}
+
 trap {
     $reason = $_.Exception.Message
     Write-Host ''
@@ -184,6 +274,7 @@ $unmerged = Get-GitOutput diff --name-only --diff-filter=U
 if ($unmerged) {
     throw "Merge Git deja en conflit. Resolvez d'abord:`n$unmerged"
 }
+Assert-NoTrackedConflictMarkers -Root $Repository -Label 'pre-update working tree'
 
 Save-RecoveryBundle | Out-Null
 
@@ -196,6 +287,7 @@ if ($dirty) {
         Invoke-Git stash push --include-untracked -m $stashName
         $script:stashMade = $true
         $script:stashRef = Get-GitOutput rev-parse --verify refs/stash
+        Write-RecoveryArtifact -Name 'stash-ref.txt' -Content $script:stashRef
     }
 }
 
@@ -228,13 +320,22 @@ Invoke-Step 'Fusion upstream/main dans Galadriel main' {
     Invoke-Git branch $backupBranch HEAD
     Write-Host "Backup branch: $backupBranch" -ForegroundColor DarkGray
 
-    & git merge --no-edit upstream/main
+    Invoke-UpstreamMergePreflight -UpstreamRef 'upstream/main' -StashRef $(if ($stashMade) { $stashRef } else { '' })
+
+    & git merge --no-commit --no-ff upstream/main
     if ($LASTEXITCODE -ne 0) {
         Write-Host ''
-        Write-Host 'Conflits de merge upstream:' -ForegroundColor Yellow
-        git diff --name-only --diff-filter=U
-        throw 'Fusion upstream/main interrompue; resoudre les conflits puis git commit.'
+        Write-Host 'Conflits de merge upstream inattendus apres preflight:' -ForegroundColor Yellow
+        $conflicts = @(& git diff --name-only --diff-filter=U)
+        $conflicts
+        Write-RecoveryArtifact -Name 'live-upstream-conflicts.txt' -Content $conflicts
+        & git merge --abort *> $null
+        throw 'Fusion upstream/main interrompue; merge live annule pour garder le corps Desktop demarrable.'
     }
+
+    Assert-NoTrackedConflictMarkers -Root $Repository -Label 'live merge upstream/main'
+    Assert-GitDiffCheck -Root $Repository -Label 'live merge upstream/main'
+    Invoke-Git commit --no-edit
     $script:mergedUpstream = $true
 }
 
@@ -245,6 +346,7 @@ if ($stashMade) {
             Write-Host 'La stash est conservee; resolvez les conflits puis supprimez-la manuellement.' -ForegroundColor Yellow
             throw "git stash pop $stashRef failed"
         }
+        Assert-NoTrackedConflictMarkers -Root $Repository -Label 'stash restoration'
     }
 }
 

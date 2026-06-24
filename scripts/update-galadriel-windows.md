@@ -7,8 +7,9 @@ Ce protocole est le chemin de référence quand Scorpheus demande à Galadriel d
 1. Ne jamais faire de `git reset --hard`, `git clean`, force-push ou suppression de branche pour “réparer” une mise à jour Galadriel sans demande explicite de Scorpheus.
 2. Ne jamais pousser vers `upstream`. Le fork de Scorpheus est `origin`; le repo officiel NousResearch est `upstream`.
 3. Ne jamais merger upstream au-dessus d’un working tree sale sans protéger les changements locaux : commit, stash nommé, ou branche de sauvegarde lisible.
-4. L’update Windows doit rester transactionnelle : snapshot avant changement, logs persistants, relance détachée, healthcheck, fallback TUI.
-5. Si le Desktop affiche `Hermes couldn't start` / `Could not connect to Hermes gateway`, vérifier d’abord le backend et `/api/ws`; ne pas conclure trop vite que le backend est mort.
+4. L’update Windows doit rester transactionnelle : snapshot avant changement, preflight de merge dans un worktree jetable, logs persistants, relance détachée, healthcheck, fallback TUI.
+5. Ne jamais laisser le Desktop/Vite pointer sur un worktree contenant des marqueurs de conflit Git. Si `upstream/main` ou une stash locale conflitue, l’update doit s’arrêter avant de modifier le worktree live.
+6. Si le Desktop affiche `Hermes couldn't start` / `Could not connect to Hermes gateway`, vérifier d’abord le backend et `/api/ws`; ne pas conclure trop vite que le backend est mort.
 
 ## Topologie Git attendue
 
@@ -51,10 +52,26 @@ git merge-base --is-ancestor origin/main HEAD && echo 'origin/main ancestor: yes
 
 Si `origin/main` n’est pas ancêtre de `HEAD`, ne pas pousser : il y a des commits distants non intégrés.
 
-Si `upstream/main` a avancé, faire un merge normal :
+Si `upstream/main` a avancé, l’updater versionné ne doit plus lancer le merge directement dans le worktree live. Il doit d’abord faire le même merge dans un worktree jetable sous :
+
+```text
+C:/Users/scorp/Documents/Projets_Perso/GaladrielCompanionApp/hermes_core/data/update-preflight/merge-YYYYMMDD-HHMMSS
+```
+
+Le preflight doit :
+
+- merger `upstream/main` dans ce worktree jetable ;
+- appliquer la stash nommée si le worktree local était sale ;
+- scanner les fichiers suivis pour des marqueurs en début de ligne `<<<<<<<`, `>>>>>>>` ou `|||||||` ;
+- écrire les détails dans le recovery bundle (`preflight-upstream-conflicts.txt`, `preflight-stash-conflicts.txt`, `conflict-markers-*.txt`) ;
+- s’arrêter sans toucher au worktree live si un conflit est détecté.
+
+Une fois le preflight vert seulement, faire le merge live en mode abortable :
 
 ```bash
-git merge upstream/main
+git merge --no-commit --no-ff upstream/main
+# scan conflict markers + git diff --check
+git commit --no-edit
 ```
 
 Résoudre les conflits en conservant l’identité Galadriel quand elle est locale et volontaire : `productName`, `appId`, icônes, lancement Windows, fallback TUI, et surfaces Desktop Galadriel. Accepter les ajouts upstream qui ne cassent pas cette identité.
